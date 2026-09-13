@@ -98,6 +98,32 @@ class FundamentalReportOut(BaseModel):
     publication_time: datetime
 
 
+class ShortInterestSnapshotOut(BaseModel):
+    """`change_percent`/`change_quantity` are reported directly by FINRA
+    alongside the position itself, not derived after the fact (contrast
+    with FundAumSnapshotOut.net_assets_change_usd, which this system
+    computes) — see capint.models.short_interest.ShortInterestSnapshot's
+    docstring. `publication_time` here is the settlement date itself,
+    since FINRA's API does not expose a separate report-publication
+    timestamp distinct from the settlement cycle date."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: UUID
+    company_entity_id: UUID
+    ticker: str
+    settlement_date: date
+    current_short_position: Decimal
+    previous_short_position: Decimal | None
+    change_percent: Decimal | None
+    change_quantity: Decimal | None
+    average_daily_volume: Decimal | None
+    days_to_cover: Decimal | None
+    exchange_code: str | None
+    market_class_code: str | None
+    publication_time: datetime
+
+
 class CompanyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

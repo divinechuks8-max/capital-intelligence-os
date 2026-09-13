@@ -142,6 +142,37 @@ isolation or a sector taxonomy this phase doesn't build. Per-snapshot
 idempotent (each N-PORT is its own distinct point-in-time report, so no
 comparative-restatement canonicalization is needed here, unlike Phase 7/8).
 
+## Ingest real FINRA short interest
+
+Uses the same identifying User-Agent convention as the SEC adapters
+(`SEC_EDGAR_USER_AGENT`), even though this hits FINRA, not SEC — reusing
+one setting for "an identifying contact string this system sends" rather
+than inventing a second FINRA-specific env var for what is the same kind
+of value:
+
+```bash
+python -m capint.cli ingest-short-interest --ticker AAPL --num-cycles 3
+```
+
+Per-ticker (`--ticker`, repeatable — no `--from-tracked`; this system has
+no reliable way to map its CIK-keyed companies to a *current* ticker
+without point-in-time identifier validation, which is out of scope here).
+Resolves companies by bare ticker, not CIK/CUSIP — FINRA's consolidated
+short interest feed carries no issuer CIK at all. `change_percent` and
+`change_quantity` are reported directly by FINRA alongside the position
+itself (unlike Phase 9's `net_assets_change_usd`, which this system
+computes from two snapshots).
+
+FINRA reports short interest bi-monthly, on settlement dates that fall
+near the 15th and the last calendar day of each month, shifted around
+holidays/weekends. FINRA's API requires an exact `settlementDate` match
+(it's a partition key, not a sortable/browsable column), so this adapter
+probes a window of candidate dates newest-first and keeps whichever ones
+the live API actually confirms — verified against real data: 2026-08-31,
+2026-08-14, and 2026-07-31 all returned real settlement data, while
+2026-08-29 (a plausible mid-month guess) returned HTTP 204 and was
+correctly skipped.
+
 ## Insider Radar
 
 ```
@@ -529,3 +560,56 @@ servers being reachable.
   correctly `None` for the first observed period and a real dollar delta
   thereafter, confirmed idempotent, served through `/api/v1/fund-aum`
   over HTTP.
+
+## Known limitations (Phase 10)
+
+- **Resolved by ticker alone, not CIK/CUSIP/ISIN — the first adapter in
+  this system to do so, and exactly what spec §5 warns against relying on
+  solely.** FINRA's consolidated short interest feed carries no issuer CIK
+  at all, only a ticker symbol (`symbolCode`). This is a real, load-bearing
+  limitation: tickers are reassigned over time, and a stale or reused
+  ticker could silently resolve to the wrong company.
+- **No point-in-time ticker validity checking.** `EntityIdentifier` has
+  `valid_from`/`valid_to` columns in the schema specifically for this, but
+  `get_or_create_company_by_ticker` does not consult them — it takes the
+  first matching TICKER identifier regardless of when it was valid. A
+  future phase should add point-in-time-aware ticker resolution before
+  this data is used for anything decision-relevant across a long history.
+- **Settlement-date discovery is candidate-probing, not a computed
+  calendar.** FINRA short interest settlement dates fall near the 15th and
+  last calendar day of each month (per Rule 4560) but shift for
+  weekends/holidays in a way this adapter does not compute exactly (that
+  would need a full market holiday calendar). Instead it generates a
+  window of plausible dates and probes each live, keeping whichever the
+  API actually confirms. Confirmed live: 2026-08-31, 2026-08-14, and
+  2026-07-31 are real settlement cycles; 2026-08-29, a plausible
+  mid-month guess, returned HTTP 204 and was correctly skipped rather than
+  treated as an error.
+- **No `--from-tracked` convenience**, same reasoning as Phase 9's fund
+  CIKs: this system has no reliable mapping from its existing CIK-keyed
+  companies to a current ticker, so `--ticker` must be supplied explicitly.
+- **No daily short *volume* (FINRA's separate `CNMSshvolYYYYMMDD.txt`
+  feed, confirmed free/public during research for this phase) — only the
+  bi-monthly *position* data is ingested.** Daily volume is a much higher
+  cadence, differently-shaped dataset (per-venue daily totals, not a
+  point-in-time position with a reported percent change) that would
+  warrant its own adapter, not a bolt-on to this one.
+- **No short-interest scoring/radar yet** — this phase only ingests, per
+  the same ingest-now/score-later split as Phases 2→3 and 4→5. A future
+  phase could compute an acceleration/momentum score from the time series
+  this ingests (3+ settlement cycles per ticker).
+- A self-contained `_RateLimitedFinraClient` was written instead of
+  reusing/renaming `capint.adapters.sec_common.RateLimitedSecClient` — a
+  deliberate choice, since FINRA is a different organization from SEC with
+  its own (lighter, no-registration) access policy, and a broader rename
+  refactor across five existing SEC-adapter files wasn't justified for
+  this need.
+- Validated against real, live FINRA data end to end: AAPL's confirmed
+  real short position rose from 116,327,753 to 139,749,097 shares
+  (+20.13%, matching FINRA's own reported `changePercent` exactly) between
+  the 2026-08-14 and 2026-08-31 settlement dates, with `days_to_cover`
+  correctly at 3.53; a second ticker (MSFT) ingested in the same run to
+  confirm multi-ticker batching; re-running ingestion confirmed fully
+  idempotent (0 new snapshots, all skipped as duplicates); served
+  correctly through `/api/v1/short-interest` over HTTP, including
+  ticker-filtered queries.

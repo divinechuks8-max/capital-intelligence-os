@@ -14,6 +14,7 @@ from capint.models.institution import (
 )
 from capint.models.ownership import BeneficialOwnershipDisclosure, ScheduleType
 from capint.models.person import Person, PersonCompanyRole
+from capint.models.short_interest import ShortInterestSnapshot
 from capint.models.source import Document, Source, SourceTier
 
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
     "Person",
     "PersonCompanyRole",
     "ScheduleType",
+    "ShortInterestSnapshot",
     "Source",
     "SourceTier",
 ]

@@ -159,6 +159,35 @@ def test_funds_and_fund_aum_endpoints(session):
     assert float(by_period["2026-06-30"]["net_assets_change_usd"]) > 0
 
 
+def test_short_interest_endpoint(session):
+    from datetime import date as _date
+
+    from capint.adapters.finra_short_interest import FINRAShortInterestAdapter
+    from capint.ingestion.finra_short_interest import run_ingestion as run_short_interest_ingestion
+    from tests.fixtures.finra_short_interest import make_test_client as make_finra_test_client
+
+    adapter = FINRAShortInterestAdapter(
+        user_agent="Capital Intelligence OS tests test@example.com",
+        client=make_finra_test_client(),
+        min_request_interval=0,
+    )
+    run_short_interest_ingestion(session, adapter, ["AAPL"], num_cycles=3, as_of=_date(2026, 9, 13))
+
+    client = next(make_client(session))
+
+    snapshots = client.get("/api/v1/short-interest").json()
+    assert len(snapshots) == 3
+    by_date = {s["settlement_date"]: s for s in snapshots}
+    assert by_date["2026-08-31"]["current_short_position"] == "139749097.00"
+    assert by_date["2026-08-31"]["change_percent"] == "20.13"
+
+    ticker_filtered = client.get("/api/v1/short-interest", params={"ticker": "AAPL"}).json()
+    assert len(ticker_filtered) == 3
+
+    none_filtered = client.get("/api/v1/short-interest", params={"ticker": "MSFT"}).json()
+    assert none_filtered == []
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

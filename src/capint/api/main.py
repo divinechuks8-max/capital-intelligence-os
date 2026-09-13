@@ -19,6 +19,7 @@ from capint.api.schemas import (
     InstitutionalHoldingOut,
     InstitutionalRadarEntryOut,
     InstitutionOut,
+    ShortInterestSnapshotOut,
 )
 from capint.convergence.engine import compute_convergence
 from capint.db import get_session
@@ -30,6 +31,7 @@ from capint.models.fund import Fund, FundAumSnapshot
 from capint.models.fundamentals import FundamentalReport
 from capint.models.institution import InstitutionalHolding, InstitutionalManager
 from capint.models.ownership import BeneficialOwnershipDisclosure
+from capint.models.short_interest import ShortInterestSnapshot
 from capint.radar.insider_radar import compute_insider_radar
 from capint.radar.institutional_radar import compute_institutional_radar
 from capint.scoring.insider_conviction import DEFAULT_BASELINE_LOOKBACK_DAYS as INSIDER_DEFAULT_BASELINE_LOOKBACK_DAYS
@@ -353,6 +355,50 @@ def list_fund_aum_snapshots(
             publication_time=event.publication_time,
         )
         for snapshot, event, fund_entity, fund in rows
+    ]
+
+
+@app.get("/api/v1/short-interest", response_model=list[ShortInterestSnapshotOut])
+def list_short_interest_snapshots(
+    company_entity_id: UUID | None = None,
+    ticker: str | None = None,
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    session: Session = Depends(get_session),
+) -> list[ShortInterestSnapshotOut]:
+    """FINRA consolidated short interest snapshots (Phase 10, spec §24),
+    point-in-time by `as_of` against Event.publication_time. Resolved by
+    ticker, not CIK — see capint.models.short_interest's module docstring
+    for the documented limitation that implies."""
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    stmt = (
+        select(ShortInterestSnapshot, Event)
+        .join(Event, ShortInterestSnapshot.event_id == Event.id)
+        .where(Event.publication_time <= cutoff)
+    )
+    if company_entity_id is not None:
+        stmt = stmt.where(ShortInterestSnapshot.company_entity_id == company_entity_id)
+    if ticker is not None:
+        stmt = stmt.where(ShortInterestSnapshot.ticker == ticker.upper())
+    stmt = stmt.order_by(ShortInterestSnapshot.settlement_date.desc())
+
+    rows = session.execute(stmt).all()
+    return [
+        ShortInterestSnapshotOut(
+            event_id=event.id,
+            company_entity_id=snapshot.company_entity_id,
+            ticker=snapshot.ticker,
+            settlement_date=snapshot.settlement_date,
+            current_short_position=snapshot.current_short_position,
+            previous_short_position=snapshot.previous_short_position,
+            change_percent=snapshot.change_percent,
+            change_quantity=snapshot.change_quantity,
+            average_daily_volume=snapshot.average_daily_volume,
+            days_to_cover=snapshot.days_to_cover,
+            exchange_code=snapshot.exchange_code,
+            market_class_code=snapshot.market_class_code,
+            publication_time=event.publication_time,
+        )
+        for snapshot, event in rows
     ]
 
 

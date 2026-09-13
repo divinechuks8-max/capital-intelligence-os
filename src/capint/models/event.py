@@ -42,6 +42,7 @@ class EventType(str, enum.Enum):
     EXCHANGE_FLOW = "EXCHANGE_FLOW"
     TOKEN_UNLOCK = "TOKEN_UNLOCK"
     TREASURY_MOVEMENT = "TREASURY_MOVEMENT"
+    SHORT_INTEREST_CHANGE = "SHORT_INTEREST_CHANGE"
 
 
 class Event(UUIDPKMixin, CreatedAtMixin, Base):
