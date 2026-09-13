@@ -12,6 +12,7 @@ from capint.api.schemas import (
     CompanyOut,
     ConvergenceEntryOut,
     EventOut,
+    FundamentalReportOut,
     InsiderRadarEntryOut,
     InstitutionalHoldingOut,
     InstitutionalRadarEntryOut,
@@ -23,6 +24,7 @@ from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
 from capint.models.entity import Entity
 from capint.models.event import Event, EventType
+from capint.models.fundamentals import FundamentalReport
 from capint.models.institution import InstitutionalHolding, InstitutionalManager
 from capint.models.ownership import BeneficialOwnershipDisclosure
 from capint.radar.insider_radar import compute_insider_radar
@@ -243,6 +245,54 @@ def list_capital_allocation_facts(
             publication_time=event.publication_time,
         )
         for fact, event in rows
+    ]
+
+
+@app.get("/api/v1/fundamentals", response_model=list[FundamentalReportOut])
+def list_fundamental_reports(
+    company_entity_id: UUID | None = None,
+    period_type: str | None = Query(default=None, pattern="^(QUARTER|FISCAL_YEAR)$"),
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    session: Session = Depends(get_session),
+) -> list[FundamentalReportOut]:
+    """Revenue/earnings/margin reports (spec §21) from SEC XBRL structured
+    data, point-in-time by `as_of` against Event.publication_time (the
+    10-Q/10-K filing date — see capint.adapters.sec_xbrl for why this
+    lags the actual earnings-release date, which isn't ingested)."""
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    stmt = (
+        select(FundamentalReport, Event)
+        .join(Event, FundamentalReport.event_id == Event.id)
+        .where(Event.publication_time <= cutoff)
+    )
+    if company_entity_id is not None:
+        stmt = stmt.where(FundamentalReport.company_entity_id == company_entity_id)
+    if period_type is not None:
+        stmt = stmt.where(FundamentalReport.period_type == period_type)
+    stmt = stmt.order_by(FundamentalReport.period_end.desc())
+
+    rows = session.execute(stmt).all()
+    return [
+        FundamentalReportOut(
+            event_id=event.id,
+            company_entity_id=report.company_entity_id,
+            period_type=report.period_type,
+            period_start=report.period_start,
+            period_end=report.period_end,
+            fiscal_year=report.fiscal_year,
+            fiscal_period=report.fiscal_period,
+            revenue_usd=report.revenue_usd,
+            net_income_usd=report.net_income_usd,
+            eps_diluted=report.eps_diluted,
+            gross_profit_usd=report.gross_profit_usd,
+            operating_income_usd=report.operating_income_usd,
+            gross_margin_pct=report.gross_margin_pct,
+            operating_margin_pct=report.operating_margin_pct,
+            filing_form_type=report.filing_form_type,
+            filing_accession=report.filing_accession,
+            publication_time=event.publication_time,
+        )
+        for report, event in rows
     ]
 
 

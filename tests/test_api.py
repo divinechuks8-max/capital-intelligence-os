@@ -109,6 +109,30 @@ def test_capital_allocation_endpoint(session):
     assert all(f["event_type"] == "SHARE_BUYBACK" for f in buybacks)
 
 
+def test_fundamentals_endpoint(session):
+    from capint.adapters.sec_xbrl import SECXBRLFactsAdapter
+    from capint.ingestion.sec_xbrl import run_ingestion as run_xbrl_ingestion
+    from tests.fixtures.sec_xbrl import make_test_client as make_xbrl_test_client
+
+    adapter = SECXBRLFactsAdapter(
+        user_agent="Capital Intelligence OS tests test@example.com",
+        client=make_xbrl_test_client(),
+        min_request_interval=0,
+    )
+    run_xbrl_ingestion(session, adapter, ["0000320193"])
+
+    client = next(make_client(session))
+    resp = client.get("/api/v1/fundamentals")
+    assert resp.status_code == 200
+    reports = resp.json()
+    assert len(reports) > 0
+    assert {r["period_type"] for r in reports} == {"QUARTER", "FISCAL_YEAR"}
+    fy_only = client.get("/api/v1/fundamentals", params={"period_type": "FISCAL_YEAR"}).json()
+    assert len(fy_only) > 0
+    assert all(r["period_type"] == "FISCAL_YEAR" for r in fy_only)
+    assert any(r["gross_margin_pct"] is not None for r in fy_only)
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

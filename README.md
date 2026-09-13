@@ -83,31 +83,39 @@ wrote, never this system's interpretation. `SCHEDULE 13D` filings become
 `ACTIVIST_STAKE` events, `SCHEDULE 13G` filings become
 `MAJOR_HOLDER_CHANGE` events. Per-disclosure idempotent: safe to re-run.
 
-## Ingest real SEC capital-allocation facts (buybacks, dividends, debt)
+## Ingest real SEC financial facts (capital allocation + fundamentals)
 
 Also requires `SEC_EDGAR_USER_AGENT`:
 
 ```bash
-python -m capint.cli ingest-capital-allocation --from-tracked --cik 0000320193
+python -m capint.cli ingest-financials --from-tracked --cik 0000320193
 ```
 
 Structurally different from every other adapter: there is no "current
 filings across the universe" feed for this data, so it's per-company —
 `--cik` (repeatable) targets specific companies by CIK, `--from-tracked`
 adds every CIK-identified company already in the database (from Form
-4/13D-G ingestion; the two are merged, not either/or). Pulls each
-company's SEC XBRL structured facts and keeps only genuinely annual-
-duration figures from 10-Ks: `SHARE_BUYBACK`, `DIVIDEND_PAYMENT`,
-`DEBT_ISSUANCE`, `DEBT_REPAYMENT`. See `sec_xbrl.py`'s module docstring
-for two things confirmed against Apple's real filing history before this
-was finalized: cash-flow figures are reported year-to-date, not per
-discrete quarter (so quarterly figures are deliberately not derived), and
-a fact's `fp: "FY"` tag does NOT reliably mean "this fact spans the full
-fiscal year" (a 10-K's own quarterly-data footnote uses it too) — an
-explicit duration check replaces trusting that flag. Per-fact idempotent,
-keyed on the earliest filing that discloses each fiscal year's number
-(a later 10-K's comparative-year table re-reports the same fact; only the
-first disclosure counts).
+4/13D-G ingestion; the two are merged, not either/or). One SEC XBRL
+company-facts fetch per company feeds two things:
+
+- **Capital allocation** (Phase 7): genuinely annual-duration 10-K figures
+  only — `SHARE_BUYBACK`, `DIVIDEND_PAYMENT`, `DEBT_ISSUANCE`,
+  `DEBT_REPAYMENT`. See `sec_xbrl.py`'s module docstring for why: cash-flow
+  figures are reported year-to-date, not per discrete quarter (so
+  quarterly figures are deliberately not derived), and a fact's `fp: "FY"`
+  tag does NOT reliably mean "this fact spans the full fiscal year" (a
+  10-K's own quarterly-data footnote uses it too) — an explicit duration
+  check replaces trusting that flag.
+- **Fundamentals** (Phase 8, spec §21): revenue, net income, diluted EPS,
+  gross/operating margin, at BOTH quarterly and annual granularity —
+  income-statement facts, unlike cash-flow ones, genuinely do carry a
+  discrete-quarter duration in 10-Qs. `gross_margin_pct`/
+  `operating_margin_pct` are plain arithmetic on the disclosed figures, not
+  a score.
+
+Both are per-fact/per-report idempotent, keyed on the earliest filing
+that discloses each period's number (a later 10-K's comparative-year
+table re-reports the same fact; only the first disclosure counts).
 
 ## Insider Radar
 
@@ -209,12 +217,16 @@ servers being reachable.
   full-text-search rather than the atom "current filings" feed (which
   doesn't index these forms at all — see the adapter's module docstring).
 - `src/capint/adapters/sec_xbrl.py` / `src/capint/ingestion/sec_xbrl.py` —
-  corporate capital-allocation (buybacks/dividends/debt) adapter and
-  ingestion, per-company (no universe-wide feed exists for this data) and
-  the only adapter driven by an explicit CIK list rather than "recent
-  filings". `canonicalize_facts` keeps only the earliest disclosure of
-  each distinct fiscal-year fact — see its module docstring for the real
-  live-data bug (comparative-year restatement) that made this necessary.
+  SEC XBRL company-facts adapter and ingestion, per-company (no
+  universe-wide feed exists for this data) and the only adapter driven by
+  an explicit CIK list rather than "recent filings". Covers both
+  corporate capital-allocation (buybacks/dividends/debt, Phase 7) and
+  fundamentals (revenue/earnings/margins, Phase 8) from one fetch per
+  company. `canonicalize_facts`/`canonicalize_fundamental_facts` keep only
+  the earliest disclosure of each distinct period's fact — see the
+  module's docstrings for the real live-data bugs (comparative-year
+  restatement; a later version wrongly forcing all of a period's metrics
+  to come from one accession) that made this necessary.
 - `src/capint/api/` — FastAPI app, versioned under `/api/v1`.
 - `migrations/` — Alembic migrations.
 - `tests/fixtures/synthetic.py` — synthetic-only fixture builders for the
@@ -401,3 +413,46 @@ servers being reachable.
   (FY2013-FY2025, ~55 facts) end to end: zero duplicate periods, every
   canonical fact keyed to its earliest disclosure, confirmed idempotent,
   served through `/api/v1/capital-allocation` over HTTP.
+
+## Known limitations (Phase 8)
+
+- **Market and estimate context are deliberately NOT built.** The
+  roadmap line reads "market/fundamental/estimate context", but only the
+  fundamental third is here. Analyst estimates (consensus EPS/revenue,
+  price targets, ratings) have no free, public, SEC-equivalent source —
+  they're commercial data (FactSet, I/B/E/S, Zacks, etc.), and spec §62
+  requires resolving licensing terms before integrating a source; none
+  have been. Market microstructure (price, volume, short interest) is
+  explicitly the spec's Phase 10, not Phase 8. Building either with a
+  scraped or low-quality substitute was judged worse than leaving both out
+  and saying so plainly, same reasoning as Phase 7's M&A omission.
+- **No acceleration/deceleration detection or scoring yet** — spec §21
+  asks for it, but this phase is ingestion + plain derived margins
+  (arithmetic on disclosed figures), matching the ingestion-before-scoring
+  split every prior phase pair has followed (Phase 2→3, Phase 4→5).
+  Computing YoY/QoQ growth and margin trend is natural future work once
+  this data exists to compute it from.
+- **`Event.publication_time` here is the 10-Q/10-K filing date, not the
+  earnings-release date** — the actual "results are out" moment is
+  typically days-to-weeks earlier (an 8-K Item 2.02 or press release),
+  neither of which this system ingests. A radar or convergence check
+  built on this data would be measuring "when financials were formally
+  filed", not "when the market first learned the numbers."
+- **A period can have some metrics and not others** — a real, honest
+  characteristic of the underlying data (confirmed live: Apple's own
+  earliest XBRL-tagged fiscal years, FY2009-2015, have net income and EPS
+  but no revenue under either concept this adapter recognizes), not a
+  gap this phase tries to paper over.
+- **A real bug found via live validation, fixed with a regression test
+  before shipping:** an initial version of `canonicalize_fundamental_facts`
+  picked one "canonical accession" per period and kept only that
+  accession's metrics — wrong, because a period's earliest-filed
+  accession for one metric isn't guaranteed to be the earliest (or even
+  present) for every metric. That silently dropped real, correctly
+  disclosed values (e.g. net income) whenever the accession happened to
+  be missing an unrelated metric (e.g. revenue). Fixed by canonicalizing
+  each metric independently, then regrouping by period.
+- Validated against Apple's real fundamentals (FY2009-FY2025, ~83
+  quarterly + annual reports) end to end: zero duplicate periods, correct
+  partial-data handling for early years, computed margins matching hand
+  calculation, served through `/api/v1/fundamentals` over HTTP.

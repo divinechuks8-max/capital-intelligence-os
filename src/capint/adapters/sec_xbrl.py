@@ -1,4 +1,7 @@
-"""SEC XBRL company-facts adapter (Phase 7): corporate capital allocation.
+"""SEC XBRL company-facts adapter: corporate capital allocation (Phase 7:
+buybacks/dividends/debt) and fundamentals (Phase 8: revenue/earnings/
+margins, spec §21). One company-facts fetch feeds both — see
+extract_capital_allocation_facts and extract_fundamental_facts.
 
 Structurally different from every prior adapter here, and deliberately so:
 
@@ -70,6 +73,34 @@ CONCEPT_MAP: dict[EventType, str] = {
     EventType.DEBT_REPAYMENT: "RepaymentsOfLongTermDebt",
 }
 
+# Fundamentals (Phase 8, spec §21): income-statement concepts, unlike the
+# cash-flow ones above, ARE tagged with a genuine discrete-quarter duration
+# in 10-Qs (verified live against Apple's real facts) alongside the YTD
+# one — so both QUARTER and FISCAL_YEAR granularity are available, neither
+# derived. "revenue" has two candidate concepts because
+# RevenueFromContractWithCustomerExcludingAssessedTax was ASC 606's
+# replacement for Revenues circa 2018 — confirmed, for every period Apple
+# reports under both tags, they agree exactly, unlike the dividends case
+# in capital-allocation ingestion. Both are still merged defensively: if
+# two sources ever disagree for the same period (alias conflict or a
+# genuine restatement), that period is dropped rather than guessing which
+# number is right — see extract_fundamental_facts.
+FUNDAMENTAL_METRICS: tuple[str, ...] = ("revenue", "net_income", "eps_diluted", "gross_profit", "operating_income")
+_FUNDAMENTAL_CONCEPTS: dict[str, tuple[str, ...]] = {
+    "revenue": ("Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"),
+    "net_income": ("NetIncomeLoss",),
+    "eps_diluted": ("EarningsPerShareDiluted",),
+    "gross_profit": ("GrossProfit",),
+    "operating_income": ("OperatingIncomeLoss",),
+}
+_FUNDAMENTAL_UNITS: dict[str, str] = {
+    "revenue": "USD",
+    "net_income": "USD",
+    "eps_diluted": "USD/shares",
+    "gross_profit": "USD",
+    "operating_income": "USD",
+}
+
 
 @dataclass(frozen=True)
 class RawCapitalAllocationFact:
@@ -81,6 +112,23 @@ class RawCapitalAllocationFact:
     period_start: date
     period_end: date
     fiscal_year: int
+    form: str
+    accession: str
+    filed: date
+
+
+@dataclass(frozen=True)
+class RawFundamentalFact:
+    cik: str
+    entity_name: str
+    metric: str  # one of FUNDAMENTAL_METRICS
+    xbrl_concept: str
+    value: Decimal
+    period_start: date
+    period_end: date
+    period_type: str  # "QUARTER" or "FISCAL_YEAR"
+    fiscal_year: int | None
+    fiscal_period: str | None  # raw XBRL "fp"
     form: str
     accession: str
     filed: date
@@ -161,6 +209,71 @@ class SECXBRLFactsAdapter(SourceAdapter):
                         filed=filed,
                     )
                 )
+        return results
+
+    def extract_fundamental_facts(self, cik: str, facts: dict[str, Any]) -> list[RawFundamentalFact]:
+        """Discrete-quarter (~80-100 day) and fiscal-year (~330-380 day)
+        facts from 10-Q/10-K filings — YTD-cumulative durations (e.g. a
+        ~181-day H1 figure) are excluded, same non-derivation principle as
+        capital-allocation facts, just with real discrete-quarter data
+        available here instead of needing to derive it."""
+        entity_name = facts.get("entityName", "UNKNOWN")
+        gaap = facts.get("facts", {}).get("us-gaap", {})
+
+        results: list[RawFundamentalFact] = []
+        for metric in FUNDAMENTAL_METRICS:
+            unit = _FUNDAMENTAL_UNITS[metric]
+            by_period: dict[tuple[date, date], list[tuple[Decimal, dict[str, Any], str, str]]] = {}
+
+            for concept_name in _FUNDAMENTAL_CONCEPTS[metric]:
+                if concept_name not in gaap:
+                    continue
+                for fact in gaap[concept_name].get("units", {}).get(unit, []):
+                    if fact.get("form") not in ("10-K", "10-Q"):
+                        continue
+                    try:
+                        value = Decimal(str(fact["val"]))
+                        period_start = date.fromisoformat(fact["start"])
+                        period_end = date.fromisoformat(fact["end"])
+                        date.fromisoformat(fact["filed"])
+                    except (KeyError, InvalidOperation, ValueError):
+                        continue
+
+                    duration = (period_end - period_start).days
+                    if 80 <= duration <= 100:
+                        period_type = "QUARTER"
+                    elif 330 <= duration <= 380:
+                        period_type = "FISCAL_YEAR"
+                    else:
+                        continue  # YTD or an irregular stub period — excluded
+
+                    by_period.setdefault((period_start, period_end), []).append(
+                        (value, fact, concept_name, period_type)
+                    )
+
+            for (period_start, period_end), entries in by_period.items():
+                if len({v for v, _fact, _concept, _pt in entries}) > 1:
+                    # Two sources disagree for this period (alias conflict or a
+                    # genuine restatement) — don't guess which number is right.
+                    continue
+                for value, fact, concept_name, period_type in entries:
+                    results.append(
+                        RawFundamentalFact(
+                            cik=parse_cik(cik),
+                            entity_name=entity_name,
+                            metric=metric,
+                            xbrl_concept=concept_name,
+                            value=value,
+                            period_start=period_start,
+                            period_end=period_end,
+                            period_type=period_type,
+                            fiscal_year=fact.get("fy"),
+                            fiscal_period=fact.get("fp"),
+                            form=fact["form"],
+                            accession=fact["accn"],
+                            filed=date.fromisoformat(fact["filed"]),
+                        )
+                    )
         return results
 
     def fetch_records(self, since, until) -> Iterable[dict[str, Any]]:

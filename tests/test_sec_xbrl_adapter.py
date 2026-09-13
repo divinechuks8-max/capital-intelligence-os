@@ -80,6 +80,91 @@ def test_quarterly_footnote_facts_tagged_fp_fy_are_excluded():
         )
 
 
+def test_extracts_quarterly_and_annual_fundamental_facts():
+    adapter = make_adapter()
+    facts_json = adapter.fetch_company_facts("0000320193")
+
+    facts = adapter.extract_fundamental_facts("0000320193", facts_json)
+    assert facts
+
+    metrics = {f.metric for f in facts}
+    assert metrics == {"revenue", "net_income", "eps_diluted", "gross_profit", "operating_income"}
+
+    period_types = {f.period_type for f in facts}
+    assert period_types == {"QUARTER", "FISCAL_YEAR"}
+
+    for f in facts:
+        duration = (f.period_end - f.period_start).days
+        if f.period_type == "QUARTER":
+            assert 80 <= duration <= 100
+        else:
+            assert 330 <= duration <= 380
+
+
+def test_revenue_concept_migration_uses_whichever_tag_is_present():
+    """Revenues (pre-ASC606) and RevenueFromContractWithCustomerExcludingAssessedTax
+    (post-ASC606) are a genuine tag migration, not independent metrics —
+    confirmed live (both report identically for every period Apple tags
+    under both). Facts from either concept feed the same "revenue" metric."""
+    adapter = make_adapter()
+    facts_json = adapter.fetch_company_facts("0000320193")
+    facts = adapter.extract_fundamental_facts("0000320193", facts_json)
+
+    revenue_concepts = {f.xbrl_concept for f in facts if f.metric == "revenue"}
+    assert revenue_concepts <= {"Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"}
+    assert revenue_concepts  # at least one of the two actually contributed facts
+
+
+def test_disagreeing_concept_values_for_same_period_are_dropped():
+    """Synthetic test of the defensive merge logic (the real fixture's
+    trimmed history happens not to retain an overlap period): if two
+    candidate concepts for the same metric ever disagree for the same
+    period — an alias conflict, or a genuine restatement — that period is
+    dropped rather than guessing which number is right."""
+    facts = {
+        "entityName": "Test Co (SYNTHETIC)",
+        "facts": {
+            "us-gaap": {
+                "Revenues": {
+                    "units": {
+                        "USD": [
+                            {
+                                "start": "2020-01-01",
+                                "end": "2020-12-31",
+                                "val": 1000,
+                                "accn": "0000000001-21-000001",
+                                "filed": "2021-02-01",
+                                "form": "10-K",
+                                "fy": 2020,
+                                "fp": "FY",
+                            }
+                        ]
+                    }
+                },
+                "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                    "units": {
+                        "USD": [
+                            {
+                                "start": "2020-01-01",
+                                "end": "2020-12-31",
+                                "val": 999,  # deliberately disagrees with Revenues above
+                                "accn": "0000000001-21-000001",
+                                "filed": "2021-02-01",
+                                "form": "10-K",
+                                "fy": 2020,
+                                "fp": "FY",
+                            }
+                        ]
+                    }
+                },
+            }
+        },
+    }
+    adapter = make_adapter()
+    results = adapter.extract_fundamental_facts("0000000001", facts)
+    assert [r for r in results if r.metric == "revenue"] == []
+
+
 def test_missing_user_agent_is_rejected():
     import pytest
 

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from capint.convergence.engine import ConvergenceEntry, ConvergenceLabel
 from capint.models.entity import EntityType
 from capint.models.event import EventType
+from capint.models.fundamentals import FundamentalPeriodType
 from capint.models.institution import InstitutionalManagerType, InstitutionalPositionStatus
 from capint.models.ownership import ScheduleType
 from capint.scoring.insider_conviction import InsiderConvictionScore
@@ -32,6 +33,34 @@ class CapitalAllocationFactOut(BaseModel):
     period_start: date
     period_end: date
     fiscal_year: int | None
+    filing_form_type: str | None
+    filing_accession: str | None
+    publication_time: datetime
+
+
+class FundamentalReportOut(BaseModel):
+    """`publication_time` is the 10-Q/10-K filing date — earlier than that
+    (usually by days-to-weeks) is when the actual earnings release/8-K
+    happened, which this system doesn't ingest yet (see
+    capint.adapters.sec_xbrl's module docstring). Margin fields are plain
+    arithmetic on the disclosed figures, not a score."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: UUID
+    company_entity_id: UUID
+    period_type: FundamentalPeriodType
+    period_start: date
+    period_end: date
+    fiscal_year: int | None
+    fiscal_period: str | None
+    revenue_usd: Decimal | None
+    net_income_usd: Decimal | None
+    eps_diluted: Decimal | None
+    gross_profit_usd: Decimal | None
+    operating_income_usd: Decimal | None
+    gross_margin_pct: Decimal | None
+    operating_margin_pct: Decimal | None
     filing_form_type: str | None
     filing_accession: str | None
     publication_time: datetime

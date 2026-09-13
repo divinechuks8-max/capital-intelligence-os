@@ -3,7 +3,7 @@
     python -m capint.cli ingest-form4 --count 50
     python -m capint.cli ingest-13f --count 20
     python -m capint.cli ingest-13dg --days-back 7
-    python -m capint.cli ingest-capital-allocation --from-tracked
+    python -m capint.cli ingest-financials --from-tracked
 """
 
 import argparse
@@ -93,7 +93,10 @@ def ingest_13dg(days_back: int, limit: int) -> int:
     return 0
 
 
-def ingest_capital_allocation(ciks: list[str], from_tracked: bool) -> int:
+def ingest_financials(ciks: list[str], from_tracked: bool) -> int:
+    """Ingests both capital-allocation facts (Phase 7: buybacks, dividends,
+    debt) and fundamentals (Phase 8: revenue, earnings, margins) — one
+    XBRL company-facts fetch per company feeds both."""
     if not _require_user_agent():
         return 1
 
@@ -121,11 +124,13 @@ def ingest_capital_allocation(ciks: list[str], from_tracked: bool) -> int:
 
         summary = run_xbrl_ingestion(session, adapter, ciks)
 
-    print(f"companies seen:              {summary.companies_seen}")
-    print(f"companies with no facts:     {summary.companies_with_no_facts}")
-    print(f"facts created:               {summary.facts_created}")
-    print(f"facts skipped (dup):         {summary.facts_skipped_duplicate}")
-    print(f"company errors:              {len(summary.company_errors)}")
+    print(f"companies seen:                    {summary.companies_seen}")
+    print(f"companies with no facts:           {summary.companies_with_no_facts}")
+    print(f"capital-allocation facts created:  {summary.facts_created}")
+    print(f"capital-allocation facts dup:      {summary.facts_skipped_duplicate}")
+    print(f"fundamental reports created:       {summary.fundamental_reports_created}")
+    print(f"fundamental reports dup:           {summary.fundamental_reports_skipped_duplicate}")
+    print(f"company errors:                    {len(summary.company_errors)}")
     for err in summary.company_errors:
         print(f"  - {err}")
     return 0
@@ -146,7 +151,8 @@ def main() -> int:
     dg_parser.add_argument("--limit", type=int, default=100, help="Max filings per schedule type")
 
     xbrl_parser = subparsers.add_parser(
-        "ingest-capital-allocation", help="Ingest SEC XBRL buyback/dividend/debt facts for specific companies"
+        "ingest-financials",
+        help="Ingest SEC XBRL capital-allocation (buyback/dividend/debt) and fundamentals facts",
     )
     xbrl_parser.add_argument("--cik", action="append", default=[], help="Company CIK (repeatable)")
     xbrl_parser.add_argument(
@@ -160,8 +166,8 @@ def main() -> int:
         return ingest_13f(args.count)
     if args.command == "ingest-13dg":
         return ingest_13dg(args.days_back, args.limit)
-    if args.command == "ingest-capital-allocation":
-        return ingest_capital_allocation(args.cik, args.from_tracked)
+    if args.command == "ingest-financials":
+        return ingest_financials(args.cik, args.from_tracked)
     return 1
 
 
