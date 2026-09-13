@@ -12,7 +12,9 @@ from capint.api.schemas import (
     CompanyOut,
     ConvergenceEntryOut,
     EventOut,
+    FundAumSnapshotOut,
     FundamentalReportOut,
+    FundOut,
     InsiderRadarEntryOut,
     InstitutionalHoldingOut,
     InstitutionalRadarEntryOut,
@@ -24,6 +26,7 @@ from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
 from capint.models.entity import Entity
 from capint.models.event import Event, EventType
+from capint.models.fund import Fund, FundAumSnapshot
 from capint.models.fundamentals import FundamentalReport
 from capint.models.institution import InstitutionalHolding, InstitutionalManager
 from capint.models.ownership import BeneficialOwnershipDisclosure
@@ -293,6 +296,63 @@ def list_fundamental_reports(
             publication_time=event.publication_time,
         )
         for report, event in rows
+    ]
+
+
+@app.get("/api/v1/funds", response_model=list[FundOut])
+def list_funds(session: Session = Depends(get_session)) -> list[FundOut]:
+    rows = session.execute(select(Fund, Entity).join(Entity, Fund.entity_id == Entity.id)).all()
+    return [
+        FundOut(
+            entity_id=fund.entity_id,
+            canonical_name=entity.canonical_name,
+            ticker=fund.ticker,
+            series_name=fund.series_name,
+        )
+        for fund, entity in rows
+    ]
+
+
+@app.get("/api/v1/fund-aum", response_model=list[FundAumSnapshotOut])
+def list_fund_aum_snapshots(
+    fund_entity_id: UUID | None = None,
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    session: Session = Depends(get_session),
+) -> list[FundAumSnapshotOut]:
+    """Fund/ETF assets-under-management snapshots from Form N-PORT (spec
+    §17), point-in-time by `as_of` against Event.publication_time (the
+    N-PORT's SEC acceptance time, typically ~60 days after `period_end` —
+    see capint.adapters.sec_nport for why that lag is a hard ceiling of
+    the source data, not an ingestion delay)."""
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    stmt = (
+        select(FundAumSnapshot, Event, Entity, Fund)
+        .join(Event, FundAumSnapshot.event_id == Event.id)
+        .join(Entity, FundAumSnapshot.fund_entity_id == Entity.id)
+        .join(Fund, FundAumSnapshot.fund_entity_id == Fund.entity_id)
+        .where(Event.publication_time <= cutoff)
+    )
+    if fund_entity_id is not None:
+        stmt = stmt.where(FundAumSnapshot.fund_entity_id == fund_entity_id)
+    stmt = stmt.order_by(FundAumSnapshot.period_end.desc())
+
+    rows = session.execute(stmt).all()
+    return [
+        FundAumSnapshotOut(
+            event_id=event.id,
+            fund_entity_id=snapshot.fund_entity_id,
+            fund_name=fund_entity.canonical_name,
+            ticker=fund.ticker,
+            period_end=snapshot.period_end,
+            total_assets_usd=snapshot.total_assets_usd,
+            total_liabilities_usd=snapshot.total_liabilities_usd,
+            net_assets_usd=snapshot.net_assets_usd,
+            net_assets_change_usd=snapshot.net_assets_change_usd,
+            filing_form_type=snapshot.filing_form_type,
+            filing_accession=snapshot.filing_accession,
+            publication_time=event.publication_time,
+        )
+        for snapshot, event, fund_entity, fund in rows
     ]
 
 

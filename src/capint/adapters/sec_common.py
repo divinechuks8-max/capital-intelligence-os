@@ -20,6 +20,7 @@ import httpx
 ATOM_NS = {"a": "http://www.w3.org/2005/Atom"}
 ACCESSION_RE = re.compile(r"accession-number=([\d-]+)")
 CIK_IN_PATH_RE = re.compile(r"/data/(\d+)/")
+SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 
 
 @dataclass(frozen=True)

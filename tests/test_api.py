@@ -133,6 +133,32 @@ def test_fundamentals_endpoint(session):
     assert any(r["gross_margin_pct"] is not None for r in fy_only)
 
 
+def test_funds_and_fund_aum_endpoints(session):
+    from capint.adapters.sec_nport import SECNPortAdapter
+    from capint.ingestion.sec_nport import run_ingestion as run_nport_ingestion
+    from tests.fixtures.sec_nport import make_test_client as make_nport_test_client
+
+    adapter = SECNPortAdapter(
+        user_agent="Capital Intelligence OS tests test@example.com",
+        client=make_nport_test_client(),
+        min_request_interval=0,
+    )
+    run_nport_ingestion(session, adapter, ["0000884394"], filing_count=2)
+
+    client = next(make_client(session))
+
+    funds = client.get("/api/v1/funds").json()
+    assert len(funds) == 1
+    assert funds[0]["ticker"] == "SPY"
+
+    snapshots = client.get("/api/v1/fund-aum").json()
+    assert len(snapshots) == 2
+    by_period = {s["period_end"]: s for s in snapshots}
+    assert by_period["2026-03-31"]["net_assets_change_usd"] is None
+    assert by_period["2026-06-30"]["net_assets_change_usd"] is not None
+    assert float(by_period["2026-06-30"]["net_assets_change_usd"]) > 0
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

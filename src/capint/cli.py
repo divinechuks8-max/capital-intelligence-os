@@ -4,6 +4,7 @@
     python -m capint.cli ingest-13f --count 20
     python -m capint.cli ingest-13dg --days-back 7
     python -m capint.cli ingest-financials --from-tracked
+    python -m capint.cli ingest-nport --cik 0000884394
 """
 
 import argparse
@@ -15,12 +16,14 @@ from sqlalchemy import select
 from capint.adapters.sec_13dg import SEC13DGAdapter
 from capint.adapters.sec_13f import SEC13FAdapter
 from capint.adapters.sec_edgar import SECEdgarForm4Adapter
+from capint.adapters.sec_nport import SECNPortAdapter
 from capint.adapters.sec_xbrl import SECXBRLFactsAdapter
 from capint.config import settings
 from capint.db import SessionLocal
 from capint.ingestion.sec_13dg import run_ingestion as run_13dg_ingestion
 from capint.ingestion.sec_13f import run_ingestion as run_13f_ingestion
 from capint.ingestion.sec_form4 import run_ingestion as run_form4_ingestion
+from capint.ingestion.sec_nport import run_ingestion as run_nport_ingestion
 from capint.ingestion.sec_xbrl import run_ingestion as run_xbrl_ingestion
 from capint.models.company import Company
 from capint.models.entity import EntityIdentifier, IdentifierType
@@ -136,6 +139,32 @@ def ingest_financials(ciks: list[str], from_tracked: bool) -> int:
     return 0
 
 
+def ingest_nport(ciks: list[str], filing_count: int) -> int:
+    """Ingests fund/ETF assets-under-management snapshots from Form N-PORT
+    (Phase 9). No --from-tracked here: funds aren't reliably discoverable
+    from the companies this system already tracks (13F resolves ETF
+    positions as generic CUSIP-keyed "companies", not funds) — explicit
+    --cik is required."""
+    if not _require_user_agent():
+        return 1
+    if not ciks:
+        print("No CIKs to process — pass --cik one or more times (e.g. --cik 0000884394 for SPY).", file=sys.stderr)
+        return 1
+
+    adapter = SECNPortAdapter(user_agent=settings.sec_edgar_user_agent)
+    with SessionLocal() as session:
+        summary = run_nport_ingestion(session, adapter, ciks, filing_count=filing_count)
+
+    print(f"funds seen:                  {summary.funds_seen}")
+    print(f"funds with no filings:       {summary.funds_with_no_filings}")
+    print(f"AUM snapshots created:       {summary.snapshots_created}")
+    print(f"AUM snapshots skipped (dup): {summary.snapshots_skipped_duplicate}")
+    print(f"fund errors:                 {len(summary.fund_errors)}")
+    for err in summary.fund_errors:
+        print(f"  - {err}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="capint")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -159,6 +188,10 @@ def main() -> int:
         "--from-tracked", action="store_true", help="Use every CIK-identified company already in the database"
     )
 
+    nport_parser = subparsers.add_parser("ingest-nport", help="Ingest fund/ETF AUM snapshots from Form N-PORT")
+    nport_parser.add_argument("--cik", action="append", default=[], help="Fund CIK (repeatable)")
+    nport_parser.add_argument("--filing-count", type=int, default=8, help="Max recent N-PORT filings per fund")
+
     args = parser.parse_args()
     if args.command == "ingest-form4":
         return ingest_form4(args.count)
@@ -168,6 +201,8 @@ def main() -> int:
         return ingest_13dg(args.days_back, args.limit)
     if args.command == "ingest-financials":
         return ingest_financials(args.cik, args.from_tracked)
+    if args.command == "ingest-nport":
+        return ingest_nport(args.cik, args.filing_count)
     return 1
 
 

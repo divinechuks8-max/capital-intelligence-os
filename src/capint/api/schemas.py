@@ -38,6 +38,38 @@ class CapitalAllocationFactOut(BaseModel):
     publication_time: datetime
 
 
+class FundOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    entity_id: UUID
+    canonical_name: str
+    ticker: str | None = None
+    series_name: str | None = None
+
+
+class FundAumSnapshotOut(BaseModel):
+    """`net_assets_change_usd` is a plain quarter-over-quarter dollar
+    delta, not an isolated flow figure (N-PORT doesn't expose the
+    shares-outstanding data a true flow calculation needs — see
+    capint.models.fund.FundAumSnapshot's docstring). `publication_time` is
+    when this N-PORT was accepted, typically ~60 days after `period_end`."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: UUID
+    fund_entity_id: UUID
+    fund_name: str
+    ticker: str | None
+    period_end: date
+    total_assets_usd: Decimal
+    total_liabilities_usd: Decimal | None
+    net_assets_usd: Decimal
+    net_assets_change_usd: Decimal | None
+    filing_form_type: str | None
+    filing_accession: str | None
+    publication_time: datetime
+
+
 class FundamentalReportOut(BaseModel):
     """`publication_time` is the 10-Q/10-K filing date — earlier than that
     (usually by days-to-weeks) is when the actual earnings release/8-K

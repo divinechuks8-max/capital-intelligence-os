@@ -117,6 +117,31 @@ Both are per-fact/per-report idempotent, keyed on the earliest filing
 that discloses each period's number (a later 10-K's comparative-year
 table re-reports the same fact; only the first disclosure counts).
 
+## Ingest real SEC fund/ETF AUM data (Form N-PORT)
+
+Also requires `SEC_EDGAR_USER_AGENT`:
+
+```bash
+python -m capint.cli ingest-nport --cik 0000884394 --filing-count 8
+```
+
+Per-fund (`--cik`, repeatable — no `--from-tracked` here; funds aren't
+reliably discoverable from the companies this system already tracks).
+Tracks fund/ETF **assets under management**, not **flows** — confirmed
+live, against SPY (SPDR S&P 500 ETF Trust, one of the largest ETFs in the
+world) before building this: its real N-PORT filings have no
+shares-outstanding figure anywhere, which a true flow calculation (net
+creation/redemption, isolated from market price movement) needs.
+`net_assets_change_usd` is a plain quarter-over-quarter dollar delta, not
+an isolated flow figure — see `capint/models/fund.py`'s docstring. N-PORT
+is also quarterly with a ~60-day disclosure lag, a hard ceiling on
+granularity regardless of implementation — spec §17's 1-day/5-day/20-day
+flow cadence isn't achievable from this source at any quality. Sector
+rotation (spec §18) isn't attempted either — it needs either true flow
+isolation or a sector taxonomy this phase doesn't build. Per-snapshot
+idempotent (each N-PORT is its own distinct point-in-time report, so no
+comparative-restatement canonicalization is needed here, unlike Phase 7/8).
+
 ## Insider Radar
 
 ```
@@ -227,14 +252,21 @@ servers being reachable.
   module's docstrings for the real live-data bugs (comparative-year
   restatement; a later version wrongly forcing all of a period's metrics
   to come from one accession) that made this necessary.
+- `src/capint/adapters/sec_nport.py` / `src/capint/ingestion/sec_nport.py`
+  — Form N-PORT fund/ETF AUM adapter and ingestion, per-fund (another
+  explicit-CIK-only adapter). Discovers filings via
+  data.sec.gov/submissions rather than XBRL company-facts — N-PORT isn't
+  a us-gaap document — which conveniently also gives exact acceptance
+  timestamps and the fund's ticker in one response.
 - `src/capint/api/` — FastAPI app, versioned under `/api/v1`.
 - `migrations/` — Alembic migrations.
 - `tests/fixtures/synthetic.py` — synthetic-only fixture builders for the
   Phase 1 model tests, clearly labeled, never real financial data.
 - `tests/fixtures/sec_form4/`, `tests/fixtures/sec_13f/`,
-  `tests/fixtures/sec_13dg/`, `tests/fixtures/sec_xbrl/` — real (not
-  synthetic) fixture data captured from real public filings, used to test
-  each SEC adapter/ingestion offline.
+  `tests/fixtures/sec_13dg/`, `tests/fixtures/sec_xbrl/`,
+  `tests/fixtures/sec_nport/` — real (not synthetic) fixture data captured
+  from real public filings, used to test each SEC adapter/ingestion
+  offline.
 
 ## Known limitations (Phase 2)
 
@@ -456,3 +488,44 @@ servers being reachable.
   quarterly + annual reports) end to end: zero duplicate periods, correct
   partial-data handling for early years, computed margins matching hand
   calculation, served through `/api/v1/fundamentals` over HTTP.
+
+## Known limitations (Phase 9)
+
+- **This tracks AUM, not flow — a deliberate, load-bearing scope
+  reduction, not a partial attempt at flow.** The roadmap line reads
+  "ETF/fund flows + sector rotation." True flow (net creation/redemption,
+  isolated from market price movement) needs a shares-outstanding figure
+  that real N-PORT filings simply don't reliably expose — confirmed live
+  against SPY, one of the largest, most liquid ETFs in the world, before
+  any of this was built: its N-PORT has total/net assets but no
+  shares-outstanding-by-class anywhere in the document. `net_assets_change_usd`
+  is an honest dollar delta that conflates flow with return, clearly
+  labeled as such rather than presented as isolated flow.
+- **Sector rotation (spec §18) is not attempted.** It needs either true
+  flow isolation (which doesn't exist, see above) or a sector/industry
+  taxonomy mapping each fund's holdings to a classification, neither of
+  which this phase builds.
+- **Quarterly, ~60-day-lagged granularity is a hard ceiling of the source
+  data**, not an ingestion limitation — spec §17's 1-day/5-day/20-day/
+  60-day flow cadence isn't achievable from N-PORT at any implementation
+  quality.
+- **No fund discovery mechanism** — unlike every ingestion-phase adapter
+  before it, there's no `--from-tracked` convenience; a fund's CIK isn't
+  reliably inferable from the companies this system already tracks (13F
+  resolves ETF positions as generic CUSIP-keyed "companies", not funds),
+  so `--cik` must be supplied explicitly per fund.
+- **A real bug found via live validation, fixed before shipping:**
+  `ingest_fund_snapshot` added each `FundAumSnapshot` without flushing the
+  session — with `autoflush=False`, a fund's second (and every later)
+  snapshot in the same ingestion run couldn't see the immediately
+  preceding one via `_previous_snapshot`'s query, so
+  `net_assets_change_usd` stayed `None` past the very first period.
+- **Doesn't parse portfolio holdings at all** — N-PORT's `invstOrSecs`
+  section (every position the fund holds) is fetched as part of the same
+  document but deliberately not read in this phase; a future phase could
+  use it for genuine holdings-based sector/thematic classification.
+- Validated against SPY's real assets under management (8 real quarters,
+  2024-2026, ~$591B to ~$781B): zero duplicate periods, `net_assets_change_usd`
+  correctly `None` for the first observed period and a real dollar delta
+  thereafter, confirmed idempotent, served through `/api/v1/fund-aum`
+  over HTTP.

@@ -3,6 +3,7 @@ from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
 from capint.models.entity import Entity, EntityIdentifier, EntityType, IdentifierType
 from capint.models.event import Event, EventType
+from capint.models.fund import Fund, FundAumSnapshot
 from capint.models.fundamentals import FundamentalPeriodType, FundamentalReport
 from capint.models.insider import InsiderTransaction, InsiderTransactionType
 from capint.models.institution import (
@@ -26,6 +27,8 @@ __all__ = [
     "EntityType",
     "Event",
     "EventType",
+    "Fund",
+    "FundAumSnapshot",
     "FundamentalPeriodType",
     "FundamentalReport",
     "IdentifierType",
