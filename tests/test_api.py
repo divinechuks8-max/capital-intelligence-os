@@ -188,6 +188,33 @@ def test_short_interest_endpoint(session):
     assert none_filtered == []
 
 
+def test_uk_psc_endpoint(session):
+    from capint.adapters.companies_house import CompaniesHouseAdapter
+    from capint.ingestion.companies_house import run_ingestion as run_uk_psc_ingestion
+    from tests.fixtures.companies_house import make_test_client as make_ch_test_client
+
+    adapter = CompaniesHouseAdapter(
+        api_key="test-key-not-real",
+        client=make_ch_test_client(),
+        min_request_interval=0,
+    )
+    run_uk_psc_ingestion(session, adapter, ["05151321"])
+
+    client = next(make_client(session))
+
+    records = client.get("/api/v1/uk-psc").json()
+    assert len(records) == 4
+    by_name = {r["psc_name"]: r for r in records}
+    assert by_name["Gresham House Asset Management Ltd"]["psc_kind"] == "corporate-entity-person-with-significant-control"
+    assert by_name["Gresham House Asset Management Ltd"]["ceased_on"] is None
+    assert by_name["Gresham House Asset Management Ltd"]["natures_of_control"] == ["voting-rights-25-to-50-percent"]
+    assert by_name["Mr Martyn Graham Page"]["ceased_on"] == "2018-11-12"
+
+    company_entity_id = records[0]["company_entity_id"]
+    filtered = client.get("/api/v1/uk-psc", params={"company_entity_id": company_entity_id}).json()
+    assert len(filtered) == 4
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

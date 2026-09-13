@@ -16,6 +16,7 @@ from capint.models.ownership import BeneficialOwnershipDisclosure, ScheduleType
 from capint.models.person import Person, PersonCompanyRole
 from capint.models.short_interest import ShortInterestSnapshot
 from capint.models.source import Document, Source, SourceTier
+from capint.models.uk_psc import UKPersonWithSignificantControl
 
 __all__ = [
     "Base",
@@ -45,4 +46,5 @@ __all__ = [
     "ShortInterestSnapshot",
     "Source",
     "SourceTier",
+    "UKPersonWithSignificantControl",
 ]

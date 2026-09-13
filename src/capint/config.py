@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     sec_edgar_user_agent: str = ""
+    companies_house_api_key: str = ""
 
 
 settings = Settings()

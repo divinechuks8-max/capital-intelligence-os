@@ -173,6 +173,41 @@ the live API actually confirms — verified against real data: 2026-08-31,
 2026-08-29 (a plausible mid-month guess) returned HTTP 204 and was
 correctly skipped.
 
+## Ingest real UK beneficial-ownership disclosures (Companies House PSC)
+
+Requires a free `COMPANIES_HOUSE_API_KEY` — self-service signup at
+[developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/),
+create a "Live" REST application, generate a key (instant, no approval wait):
+
+```bash
+python -m capint.cli ingest-uk-psc --company-number 05151321
+```
+
+Per-company (`--company-number`, repeatable — Companies House number, not
+a ticker — no `--from-tracked`; this system's existing companies are
+resolved by CIK/CUSIP, not Companies House numbers). Ingests the UK's
+Persons with Significant Control (PSC) register — the closest UK
+equivalent of Schedule 13D/13G (Phase 6), though a structurally different
+regime: categorical ownership/voting-rights *bands* (e.g.
+`voting-rights-25-to-50-percent`), never an exact percentage.
+
+**A real regulatory fact, confirmed live before building this**: UK
+companies whose shares trade on a "regulated market" (the LSE Main
+Market — Diageo, Barclays, GSK, Rolls-Royce, ...) are exempt from the PSC
+regime by law (Companies Act 2006, Sch 1A) and return **zero** PSC
+records — confirmed against all four of those. Their major-holder
+disclosures instead happen via the FCA's DTR5 regime, distributed through
+RNS (the London Stock Exchange's Regulatory News Service). This system
+does **not** ingest that data: the only realistic free aggregator found
+during research (investegate.co.uk) has Terms of Use that explicitly
+prohibit redistributing or processing its content for anything like this
+system's purpose, so it was deliberately not scraped, per this project's
+legally-accessible-sources-only mandate. PSC data therefore ends up
+populated mainly for AIM-listed and smaller UK companies — confirmed live
+against Frontier Developments plc and Angling Direct plc (both AIM),
+which do have real PSC records, including individual and corporate PSCs
+and both active and historical (ceased) ones.
+
 ## Insider Radar
 
 ```
@@ -613,3 +648,57 @@ servers being reachable.
   idempotent (0 new snapshots, all skipped as duplicates); served
   correctly through `/api/v1/short-interest` over HTTP, including
   ticker-filtered queries.
+
+## Known limitations (Phase 11)
+
+- **Empty for LSE Main Market-listed companies — a real legal exemption,
+  not a gap in this system.** Companies whose voting shares trade on a
+  "regulated market" (Companies Act 2006, Sch 1A) don't have to disclose
+  PSCs at all. Confirmed live: Diageo, Barclays, GSK, and Rolls-Royce all
+  return zero PSC records. Their real major-holder disclosures happen
+  under the FCA's DTR5 regime instead, distributed via RNS.
+- **DTR5/RNS major-holder and PDMR director-dealing disclosures (the
+  closer UK analogues of Phase 6's 13D/13G and Phase 2's Form 4) are
+  deliberately not ingested.** The FCA does not run a filing repository
+  like SEC EDGAR for these — they're distributed through commercial
+  newswires. The only realistic free aggregator found during research,
+  investegate.co.uk, has Terms of Use that explicitly prohibit
+  redistributing or processing its content ("Does not distribute,
+  republish or otherwise provide any information or derived works to any
+  third party... or use or process information or derived works for any
+  commercial purposes") — exactly what this system does, so it was
+  deliberately not scraped, per the legally-accessible-sources-only
+  mandate. This is a real content gap for UK insider dealing and major
+  shareholder data, not something a different implementation approach
+  could have closed with free data.
+- **No point-in-time identity resolution across companies for individual
+  (or non-UK-registered) PSCs.** Companies House gives no identifier for
+  a PSC that is stable *across* different companies — each PSC's
+  `links.self` path is scoped to one (company, PSC) relationship only. So
+  the same real individual serving as PSC of two different UK companies
+  resolves to two different Entity rows here. A **corporate** PSC
+  registered in the UK is the one exception: it carries a real Companies
+  House registration number, so it resolves through the same Company path
+  any tracked issuer would use — confirmed live (Gresham House Asset
+  Management Ltd, a real corporate PSC of Angling Direct plc, is
+  reachable via its own `UK_COMPANY_NUMBER` identifier).
+- **Cannot distinguish "PSC-exempt" from "genuinely has no PSC to
+  report."** Companies House exposes a separate
+  `persons-with-significant-control-statements` endpoint for that
+  distinction; this adapter does not call it, so a company with zero PSC
+  records could mean either.
+- **No officer/director ingestion.** Companies House's `/officers`
+  endpoint (confirmed live, real appointment dates and a genuinely
+  cross-company-stable officer ID) would be a natural next increment for
+  UK insider identification, but is out of scope for this phase to keep
+  it focused on the disclosure-equivalent data.
+- Validated against real, live Companies House data end to end: Diageo
+  plc (00023307, LSE Main Market) confirmed with zero PSC records;
+  Angling Direct plc (05151321, AIM) ingested with 4 real PSC records
+  (1 active corporate PSC, 1 ceased corporate PSC, 2 ceased individual
+  PSCs); Frontier Developments plc (02892559, AIM) ingested with 1 real
+  active individual PSC (its founder, Dr David Braben); re-running
+  ingestion confirmed fully idempotent (0 new records, all skipped as
+  duplicates); an unknown company number handled as a per-company error
+  without aborting the batch; served correctly through `/api/v1/uk-psc`
+  over HTTP.

@@ -20,6 +20,7 @@ from capint.api.schemas import (
     InstitutionalRadarEntryOut,
     InstitutionOut,
     ShortInterestSnapshotOut,
+    UKPersonWithSignificantControlOut,
 )
 from capint.convergence.engine import compute_convergence
 from capint.db import get_session
@@ -32,6 +33,7 @@ from capint.models.fundamentals import FundamentalReport
 from capint.models.institution import InstitutionalHolding, InstitutionalManager
 from capint.models.ownership import BeneficialOwnershipDisclosure
 from capint.models.short_interest import ShortInterestSnapshot
+from capint.models.uk_psc import UKPersonWithSignificantControl
 from capint.radar.insider_radar import compute_insider_radar
 from capint.radar.institutional_radar import compute_institutional_radar
 from capint.scoring.insider_conviction import DEFAULT_BASELINE_LOOKBACK_DAYS as INSIDER_DEFAULT_BASELINE_LOOKBACK_DAYS
@@ -399,6 +401,47 @@ def list_short_interest_snapshots(
             publication_time=event.publication_time,
         )
         for snapshot, event in rows
+    ]
+
+
+@app.get("/api/v1/uk-psc", response_model=list[UKPersonWithSignificantControlOut])
+def list_uk_psc_records(
+    company_entity_id: UUID | None = None,
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    session: Session = Depends(get_session),
+) -> list[UKPersonWithSignificantControlOut]:
+    """UK Companies House Persons with Significant Control (beneficial
+    ownership) disclosures (Phase 11, spec's UK extension), point-in-time
+    by `as_of` against Event.publication_time. See
+    capint.models.uk_psc's module docstring for why this is empty for
+    LSE Main Market-listed companies (a real regulatory exemption, not a
+    gap in this system)."""
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    stmt = (
+        select(UKPersonWithSignificantControl, Event)
+        .join(Event, UKPersonWithSignificantControl.event_id == Event.id)
+        .where(Event.publication_time <= cutoff)
+    )
+    if company_entity_id is not None:
+        stmt = stmt.where(UKPersonWithSignificantControl.company_entity_id == company_entity_id)
+    stmt = stmt.order_by(UKPersonWithSignificantControl.notified_on.desc())
+
+    rows = session.execute(stmt).all()
+    return [
+        UKPersonWithSignificantControlOut(
+            event_id=event.id,
+            company_entity_id=psc.company_entity_id,
+            psc_entity_id=psc.psc_entity_id,
+            psc_name=psc.psc_name,
+            psc_kind=psc.psc_kind,
+            natures_of_control=psc.natures_of_control,
+            notified_on=psc.notified_on,
+            ceased_on=psc.ceased_on,
+            country_of_residence=psc.country_of_residence,
+            nationality=psc.nationality,
+            publication_time=event.publication_time,
+        )
+        for psc, event in rows
     ]
 
 

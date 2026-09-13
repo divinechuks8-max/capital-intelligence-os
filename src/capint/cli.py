@@ -6,6 +6,7 @@
     python -m capint.cli ingest-financials --from-tracked
     python -m capint.cli ingest-nport --cik 0000884394
     python -m capint.cli ingest-short-interest --ticker AAPL
+    python -m capint.cli ingest-uk-psc --company-number 05151321
 """
 
 import argparse
@@ -14,6 +15,7 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
+from capint.adapters.companies_house import CompaniesHouseAdapter
 from capint.adapters.finra_short_interest import FINRAShortInterestAdapter
 from capint.adapters.sec_13dg import SEC13DGAdapter
 from capint.adapters.sec_13f import SEC13FAdapter
@@ -22,6 +24,7 @@ from capint.adapters.sec_nport import SECNPortAdapter
 from capint.adapters.sec_xbrl import SECXBRLFactsAdapter
 from capint.config import settings
 from capint.db import SessionLocal
+from capint.ingestion.companies_house import run_ingestion as run_uk_psc_ingestion
 from capint.ingestion.finra_short_interest import run_ingestion as run_short_interest_ingestion
 from capint.ingestion.sec_13dg import run_ingestion as run_13dg_ingestion
 from capint.ingestion.sec_13f import run_ingestion as run_13f_ingestion
@@ -37,6 +40,17 @@ def _require_user_agent() -> bool:
         print(
             "SEC_EDGAR_USER_AGENT is not set (see .env.example) — refusing to send "
             "anonymous requests to SEC EDGAR.",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def _require_companies_house_api_key() -> bool:
+    if not settings.companies_house_api_key:
+        print(
+            "COMPANIES_HOUSE_API_KEY is not set (see .env.example) — refusing to send "
+            "unauthenticated requests to Companies House.",
             file=sys.stderr,
         )
         return False
@@ -197,6 +211,42 @@ def ingest_short_interest(tickers: list[str], num_cycles: int) -> int:
     return 0
 
 
+def ingest_uk_psc(company_numbers: list[str]) -> int:
+    """Ingests UK Persons with Significant Control (beneficial ownership)
+    disclosures from Companies House (Phase 11). No --from-tracked: this
+    system's existing companies are resolved by CIK/CUSIP (US filers), not
+    Companies House numbers — explicit --company-number is required.
+
+    Real limitation, confirmed live before this was built: PSC data is
+    empty for UK companies on a "regulated market" (LSE Main Market) —
+    they're exempt by law (Companies Act 2006, Sch 1A) and disclose major
+    holders via a different regime this system doesn't ingest (see
+    capint.adapters.companies_house's module docstring). PSC data is
+    populated mainly for AIM-listed and smaller UK companies."""
+    if not _require_companies_house_api_key():
+        return 1
+    if not company_numbers:
+        print(
+            "No company numbers to process — pass --company-number one or more times "
+            "(e.g. --company-number 05151321 for Angling Direct plc).",
+            file=sys.stderr,
+        )
+        return 1
+
+    adapter = CompaniesHouseAdapter(api_key=settings.companies_house_api_key)
+    with SessionLocal() as session:
+        summary = run_uk_psc_ingestion(session, adapter, company_numbers)
+
+    print(f"companies seen:              {summary.companies_seen}")
+    print(f"companies with no PSC:       {summary.companies_with_no_psc}")
+    print(f"PSC records created:         {summary.psc_records_created}")
+    print(f"PSC records skipped (dup):   {summary.psc_records_skipped_duplicate}")
+    print(f"company errors:              {len(summary.company_errors)}")
+    for err in summary.company_errors:
+        print(f"  - {err}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="capint")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -232,6 +282,13 @@ def main() -> int:
         "--num-cycles", type=int, default=3, help="Number of recent settlement cycles to ingest per ticker"
     )
 
+    uk_psc_parser = subparsers.add_parser(
+        "ingest-uk-psc", help="Ingest UK Persons with Significant Control (beneficial ownership) disclosures"
+    )
+    uk_psc_parser.add_argument(
+        "--company-number", action="append", default=[], help="Companies House number (repeatable)"
+    )
+
     args = parser.parse_args()
     if args.command == "ingest-form4":
         return ingest_form4(args.count)
@@ -245,6 +302,8 @@ def main() -> int:
         return ingest_nport(args.cik, args.filing_count)
     if args.command == "ingest-short-interest":
         return ingest_short_interest(args.ticker, args.num_cycles)
+    if args.command == "ingest-uk-psc":
+        return ingest_uk_psc(args.company_number)
     return 1
 
 

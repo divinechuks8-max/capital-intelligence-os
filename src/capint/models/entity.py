@@ -42,6 +42,7 @@ class IdentifierType(str, enum.Enum):
     WALLET_ADDRESS = "WALLET_ADDRESS"
     ALIAS = "ALIAS"
     FUND_ID = "FUND_ID"
+    UK_COMPANY_NUMBER = "UK_COMPANY_NUMBER"
 
 
 class Entity(UUIDPKMixin, CreatedAtMixin, Base):

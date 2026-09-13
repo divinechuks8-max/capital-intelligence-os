@@ -124,6 +124,31 @@ class ShortInterestSnapshotOut(BaseModel):
     publication_time: datetime
 
 
+class UKPersonWithSignificantControlOut(BaseModel):
+    """`natures_of_control` and `psc_kind` are Companies House's own raw
+    vocabulary strings, passed through verbatim rather than mapped into a
+    closed enum — see capint.models.uk_psc.UKPersonWithSignificantControl's
+    docstring. `psc_entity_id` is scoped to this one (company, PSC)
+    relationship for individual/non-UK-registered PSCs (no stable
+    cross-company identifier exists for those — a real, documented
+    limitation), but resolves to a shared Company entity for a corporate
+    PSC with a real UK Companies House number."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: UUID
+    company_entity_id: UUID
+    psc_entity_id: UUID | None
+    psc_name: str
+    psc_kind: str
+    natures_of_control: list[str]
+    notified_on: date
+    ceased_on: date | None
+    country_of_residence: str | None
+    nationality: str | None
+    publication_time: datetime
+
+
 class CompanyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
