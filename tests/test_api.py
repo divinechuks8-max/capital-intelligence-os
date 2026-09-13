@@ -79,6 +79,36 @@ def test_institutions_and_holdings_endpoints(session):
     assert "publication_time" in holdings[0]
 
 
+def test_capital_allocation_endpoint(session):
+    from capint.adapters.sec_xbrl import SECXBRLFactsAdapter
+    from capint.ingestion.sec_xbrl import run_ingestion as run_xbrl_ingestion
+    from tests.fixtures.sec_xbrl import make_test_client as make_xbrl_test_client
+
+    adapter = SECXBRLFactsAdapter(
+        user_agent="Capital Intelligence OS tests test@example.com",
+        client=make_xbrl_test_client(),
+        min_request_interval=0,
+    )
+    run_xbrl_ingestion(session, adapter, ["0000320193"])
+
+    client = next(make_client(session))
+    resp = client.get("/api/v1/capital-allocation")
+    assert resp.status_code == 200
+    facts = resp.json()
+    assert len(facts) > 0
+    assert {f["event_type"] for f in facts} == {
+        "SHARE_BUYBACK",
+        "DIVIDEND_PAYMENT",
+        "DEBT_ISSUANCE",
+        "DEBT_REPAYMENT",
+    }
+
+    buyback_resp = client.get("/api/v1/capital-allocation", params={"event_type": "SHARE_BUYBACK"})
+    buybacks = buyback_resp.json()
+    assert len(buybacks) > 0
+    assert all(f["event_type"] == "SHARE_BUYBACK" for f in buybacks)
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

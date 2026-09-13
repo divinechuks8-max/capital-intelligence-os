@@ -16,6 +16,27 @@ from capint.scoring.insider_conviction import InsiderConvictionScore
 from capint.scoring.institutional_accumulation import InstitutionalAccumulationScore
 
 
+class CapitalAllocationFactOut(BaseModel):
+    """`period_end`/`period_start` identify the disclosed fiscal year;
+    `publication_time` is when that 10-K was filed — a coarser precision
+    than the other adapters (XBRL only gives a filing date, not a
+    timestamp) — see capint.adapters.sec_xbrl's module docstring."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: UUID
+    company_entity_id: UUID
+    event_type: EventType
+    xbrl_concept: str
+    amount_usd: Decimal
+    period_start: date
+    period_end: date
+    fiscal_year: int | None
+    filing_form_type: str | None
+    filing_accession: str | None
+    publication_time: datetime
+
+
 class CompanyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

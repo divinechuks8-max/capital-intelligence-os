@@ -83,6 +83,32 @@ wrote, never this system's interpretation. `SCHEDULE 13D` filings become
 `ACTIVIST_STAKE` events, `SCHEDULE 13G` filings become
 `MAJOR_HOLDER_CHANGE` events. Per-disclosure idempotent: safe to re-run.
 
+## Ingest real SEC capital-allocation facts (buybacks, dividends, debt)
+
+Also requires `SEC_EDGAR_USER_AGENT`:
+
+```bash
+python -m capint.cli ingest-capital-allocation --from-tracked --cik 0000320193
+```
+
+Structurally different from every other adapter: there is no "current
+filings across the universe" feed for this data, so it's per-company —
+`--cik` (repeatable) targets specific companies by CIK, `--from-tracked`
+adds every CIK-identified company already in the database (from Form
+4/13D-G ingestion; the two are merged, not either/or). Pulls each
+company's SEC XBRL structured facts and keeps only genuinely annual-
+duration figures from 10-Ks: `SHARE_BUYBACK`, `DIVIDEND_PAYMENT`,
+`DEBT_ISSUANCE`, `DEBT_REPAYMENT`. See `sec_xbrl.py`'s module docstring
+for two things confirmed against Apple's real filing history before this
+was finalized: cash-flow figures are reported year-to-date, not per
+discrete quarter (so quarterly figures are deliberately not derived), and
+a fact's `fp: "FY"` tag does NOT reliably mean "this fact spans the full
+fiscal year" (a 10-K's own quarterly-data footnote uses it too) — an
+explicit duration check replaces trusting that flag. Per-fact idempotent,
+keyed on the earliest filing that discloses each fiscal year's number
+(a later 10-K's comparative-year table re-reports the same fact; only the
+first disclosure counts).
+
 ## Insider Radar
 
 ```
@@ -182,14 +208,21 @@ servers being reachable.
   Schedule 13D/13G adapter and ingestion. Discovers filings via EDGAR
   full-text-search rather than the atom "current filings" feed (which
   doesn't index these forms at all — see the adapter's module docstring).
+- `src/capint/adapters/sec_xbrl.py` / `src/capint/ingestion/sec_xbrl.py` —
+  corporate capital-allocation (buybacks/dividends/debt) adapter and
+  ingestion, per-company (no universe-wide feed exists for this data) and
+  the only adapter driven by an explicit CIK list rather than "recent
+  filings". `canonicalize_facts` keeps only the earliest disclosure of
+  each distinct fiscal-year fact — see its module docstring for the real
+  live-data bug (comparative-year restatement) that made this necessary.
 - `src/capint/api/` — FastAPI app, versioned under `/api/v1`.
 - `migrations/` — Alembic migrations.
 - `tests/fixtures/synthetic.py` — synthetic-only fixture builders for the
   Phase 1 model tests, clearly labeled, never real financial data.
 - `tests/fixtures/sec_form4/`, `tests/fixtures/sec_13f/`,
-  `tests/fixtures/sec_13dg/` — real (not synthetic) fixture data captured
-  from real public filings, used to test each SEC adapter/ingestion
-  offline.
+  `tests/fixtures/sec_13dg/`, `tests/fixtures/sec_xbrl/` — real (not
+  synthetic) fixture data captured from real public filings, used to test
+  each SEC adapter/ingestion offline.
 
 ## Known limitations (Phase 2)
 
@@ -319,3 +352,52 @@ servers being reachable.
   corporations, and joint filings all correctly typed and attributed);
   confirmed idempotent on re-run; served back through
   `/api/v1/ownership-disclosures` over HTTP.
+
+## Known limitations (Phase 7)
+
+- **Annual granularity only, by design.** Buyback/dividend/debt cash-flow
+  figures are reported year-to-date within a fiscal year (a Q3 10-Q's
+  total covers 9 months, not one quarter) — deriving a discrete quarterly
+  number means subtracting consecutive YTD figures, which is fragile
+  across fiscal-year boundaries and restatements. This adapter only
+  ingests each fiscal year's final (10-K) total instead, at annual, not
+  quarterly, resolution. See `sec_xbrl.py`'s module docstring.
+- **No M&A, spinoffs, or secondary-offering detection yet.** Phase 7's
+  roadmap line reads "capital allocation + buybacks + M&A", but M&A/
+  spinoff *events* (as opposed to the buyback/dividend/debt *totals* this
+  phase covers) are disclosed as 8-K narrative text and merger-agreement
+  exhibits, not structured XBRL facts — detecting them properly needs the
+  NLP/LLM layer the spec explicitly places later (§43, §74: "do not start
+  with an LLM" until deterministic data infrastructure is solid). Building
+  a brittle keyword-matcher now to approximate it was judged worse than
+  leaving it out and saying so.
+- **Coarser publication precision than every other adapter.** XBRL facts
+  give a filing *date*, not a timestamp — `Event.publication_time` here is
+  midnight UTC on that date, whereas Form 4/13F/13D-G all carry the exact
+  SEC acceptance time.
+- **No universe-wide discovery.** Unlike every prior adapter, there is no
+  "recent filings" feed for this data — it only ever covers companies you
+  explicitly point it at (`--cik`) or that some other adapter already
+  found (`--from-tracked`). A company nobody has filed a Form 4, 13F, or
+  13D/13G for yet gets no capital-allocation data even if one exists.
+- **Two real bugs found via live validation (Apple's actual 22-year filing
+  history), both fixed with regression tests before this shipped:**
+  (1) a fact's `fp: "FY"` tag does not reliably mean its own duration
+  spans a full fiscal year — a 10-K's "selected quarterly data" footnote
+  tags each ~90-day quarter with `fp: "FY"` too, since `fp` describes the
+  *filing's* period, not each individual fact's; fixed by checking each
+  fact's actual start/end duration (330-380 days) directly. (2) An
+  earlier version tried `PaymentsOfDividendsCommonStock` before falling
+  back to `PaymentsOfDividends` as if they were interchangeable aliases —
+  they are not: for the one period both report, they disagree
+  ($11.965B vs. $12.150B), and the "preferred" tag only had 2 annual facts
+  against the other's 34, so preferring it would have silently discarded
+  32 real fiscal years of data. Fixed by using one fixed, standard concept
+  per category with no automatic fallback — a company that only tags the
+  non-standard variant simply gets no `DIVIDEND_PAYMENT` fact, which is
+  conservative and honest rather than guessing which of two disagreeing
+  numbers is "the" figure.
+- Validated against Apple's complete real buyback/dividend/debt history
+  (FY2013-FY2025, ~55 facts) end to end: zero duplicate periods, every
+  canonical fact keyed to its earliest disclosure, confirmed idempotent,
+  served through `/api/v1/capital-allocation` over HTTP.

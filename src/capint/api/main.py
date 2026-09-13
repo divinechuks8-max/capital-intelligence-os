@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from capint import temporal
 from capint.api.schemas import (
     BeneficialOwnershipDisclosureOut,
+    CapitalAllocationFactOut,
     CompanyOut,
     ConvergenceEntryOut,
     EventOut,
@@ -18,6 +19,7 @@ from capint.api.schemas import (
 )
 from capint.convergence.engine import compute_convergence
 from capint.db import get_session
+from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
 from capint.models.entity import Entity
 from capint.models.event import Event, EventType
@@ -198,6 +200,49 @@ def list_ownership_disclosures(
             is_joint_filing=disclosure.is_joint_filing,
         )
         for disclosure, event, filer_entity in rows
+    ]
+
+
+@app.get("/api/v1/capital-allocation", response_model=list[CapitalAllocationFactOut])
+def list_capital_allocation_facts(
+    company_entity_id: UUID | None = None,
+    event_type: EventType | None = None,
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    session: Session = Depends(get_session),
+) -> list[CapitalAllocationFactOut]:
+    """Annual buyback / dividend / debt-issuance / debt-repayment totals
+    from SEC XBRL structured data, point-in-time by `as_of` against
+    Event.publication_time (the 10-K's filing date — see
+    capint.adapters.sec_xbrl for why this is coarser than the other
+    adapters' precise timestamps)."""
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    stmt = (
+        select(CapitalAllocationFact, Event)
+        .join(Event, CapitalAllocationFact.event_id == Event.id)
+        .where(Event.publication_time <= cutoff)
+    )
+    if company_entity_id is not None:
+        stmt = stmt.where(CapitalAllocationFact.company_entity_id == company_entity_id)
+    if event_type is not None:
+        stmt = stmt.where(Event.event_type == event_type)
+    stmt = stmt.order_by(CapitalAllocationFact.period_end.desc())
+
+    rows = session.execute(stmt).all()
+    return [
+        CapitalAllocationFactOut(
+            event_id=event.id,
+            company_entity_id=fact.company_entity_id,
+            event_type=event.event_type,
+            xbrl_concept=fact.xbrl_concept,
+            amount_usd=fact.amount_usd,
+            period_start=fact.period_start,
+            period_end=fact.period_end,
+            fiscal_year=fact.fiscal_year,
+            filing_form_type=fact.filing_form_type,
+            filing_accession=fact.filing_accession,
+            publication_time=event.publication_time,
+        )
+        for fact, event in rows
     ]
 
 
