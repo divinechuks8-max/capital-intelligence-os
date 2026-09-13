@@ -29,7 +29,6 @@ outcomes. Don't read more precision into them than that.
 
 from __future__ import annotations
 
-import statistics
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -43,6 +42,7 @@ from capint.models.entity import Entity
 from capint.models.event import Event, EventType
 from capint.models.insider import InsiderTransaction, InsiderTransactionType
 from capint.models.person import PersonCompanyRole
+from capint.scoring import anomaly
 
 DEFAULT_WINDOW_DAYS = 90
 DEFAULT_BASELINE_LOOKBACK_DAYS = 730
@@ -160,30 +160,14 @@ def _baseline_bucket_totals(
     """Non-overlapping historical windows of the same length immediately
     preceding `window_start`, each summed the same way as the scoring
     window — so the comparison is window-total vs window-total, not
-    single-transaction vs window-total."""
-    totals: list[Decimal] = []
-    earliest = window_start - timedelta(days=baseline_lookback_days)
-    bucket_end = window_start
-    while True:
-        bucket_start = bucket_end - timedelta(days=window_days)
-        if bucket_start < earliest:
-            break
-        totals.append(_window_total(session, company_entity_id, as_of, bucket_start, bucket_end))
-        bucket_end = bucket_start
-    return totals
-
-
-def _robust_percentile_and_z(baseline: list[Decimal], value: Decimal) -> tuple[float, float]:
-    values = [float(v) for v in baseline]
-    v = float(value)
-    percentile = sum(1 for x in values if x <= v) / len(values)
-    median = statistics.median(values)
-    mad = statistics.median([abs(x - median) for x in values])
-    if mad == 0:
-        z = 0.0 if v == median else (10.0 if v > median else -10.0)
-    else:
-        z = 0.6745 * (v - median) / mad
-    return percentile, z
+    single-transaction vs window-total. Thin wrapper around the shared
+    capint.scoring.anomaly helper (see that module for why it's shared)."""
+    return anomaly.bucket_totals(
+        window_start,
+        window_days,
+        baseline_lookback_days,
+        lambda start, end: _window_total(session, company_entity_id, as_of, start, end),
+    )
 
 
 def score_company_insider_conviction(
@@ -266,7 +250,7 @@ def score_company_insider_conviction(
     baseline_percentile: float | None = None
     baseline_z: float | None = None
     if len(baseline) >= min_baseline_buckets:
-        baseline_percentile, baseline_z = _robust_percentile_and_z(baseline, window_total)
+        baseline_percentile, baseline_z = anomaly.robust_percentile_and_z(baseline, window_total)
         size_score = max(0.0, min(100.0, baseline_percentile * 100))
         size_explanation = (
             f"This window's ${window_total:,.0f} in open-market buying is at the "

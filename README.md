@@ -78,6 +78,36 @@ underlying transaction evidence — there is no bare number without a "why"
 (spec §69). See `src/capint/scoring/insider_conviction.py`'s module
 docstring for exactly what "conviction" means and doesn't mean here.
 
+## Institutional Radar
+
+```
+GET /api/v1/radar/institutional?window_days=365&baseline_lookback_days=1460&top_n=25&as_of=2026-06-01T00:00:00Z
+```
+
+Ranks companies by 13F institutional-accumulation score over the trailing
+`window_days` (defaults to a year, since 13F is quarterly). Same shape as
+the Insider Radar: four named, explained components
+(magnitude-vs-own-history, breadth, consensus, new-money-share) plus
+holding-level evidence. See
+`src/capint/scoring/institutional_accumulation.py`'s module docstring for
+what "accumulation" means here, including how a position increase's dollar
+value is estimated (13F doesn't disclose a cost basis).
+
+## Convergence (two-family)
+
+```
+GET /api/v1/radar/convergence?insider_window_days=90&institutional_window_days=365&top_n=25
+```
+
+For each company with an insider and/or institutional signal, returns
+**both scores side by side** (never blended into one number — spec §33)
+plus a label: `INSIDER_AND_INSTITUTIONAL_ACCUMULATING`,
+`MIXED_INSIDER_BUYING_INSTITUTIONAL_SELLING`, `INSIDER_ONLY`, or
+`INSTITUTIONAL_ONLY`. This is deliberately a two-family stand-in for the
+spec's full multi-family Convergence Engine (§29) — see
+`src/capint/convergence/engine.py`'s module docstring for exactly what
+that does and doesn't mean yet.
+
 ## Test
 
 ```bash
@@ -114,6 +144,15 @@ reachable.
 - `src/capint/adapters/sec_13f.py` / `src/capint/ingestion/sec_13f.py` —
   13F-HR institutional-holdings adapter and ingestion, mirroring the Form 4
   split. Resolves companies by CUSIP (not CIK — see Known limitations).
+- `src/capint/scoring/anomaly.py` — shared "how unusual vs. own trailing
+  history" math (median/MAD percentile+z-score) used by both insider and
+  institutional scoring, so a third signal family reuses it rather than
+  re-deriving it.
+- `src/capint/scoring/institutional_accumulation.py` /
+  `src/capint/radar/institutional_radar.py` — institutional-accumulation
+  scoring and radar, mirroring Phase 3's insider modules.
+- `src/capint/convergence/engine.py` — the two-family (insider +
+  institutional) convergence check described above.
 - `src/capint/api/` — FastAPI app, versioned under `/api/v1`.
 - `migrations/` — Alembic migrations.
 - `tests/fixtures/synthetic.py` — synthetic-only fixture builders for the
@@ -185,3 +224,35 @@ reachable.
 - Institutional-holdings scoring (an "institutional accumulation" signal
   analogous to Phase 3's insider conviction) is not built yet — Phase 4 is
   ingestion only, matching the roadmap's Phase 4/5 split.
+
+## Known limitations (Phase 5)
+
+- **Same thin-baseline effect as Phase 3, worse.** Because Phase 4 has no
+  historical backfill, most companies' "trailing windows" baseline is
+  literally all-zero (no prior quarters ingested at all) rather than
+  merely thin. A single accumulating quarter against an all-zero baseline
+  computes as the 100th percentile by construction — technically correct
+  ("unusual relative to what we've observed") but easy to over-read as
+  "extreme" when it may just mean "the second quarter we've ever ingested."
+  Fix is the same as Phase 3's: a real historical-backfill adapter.
+- **An increase's dollar value is estimated, not disclosed.** 13F reports
+  a position's total shares and total value each quarter, not a cost basis
+  for the incremental shares — `institutional_accumulation.py` estimates it
+  as `shares_change * (market_value_usd / shares_held)`, i.e. this
+  quarter's implied per-share price applied to the added shares. Exactly
+  right for a brand-new position; an approximation for an addition.
+- **The convergence check is two families, not the spec's full engine.**
+  Insider + institutional only. Adding a third family (e.g. ETF flows)
+  will need real signal-independence handling (spec §30-31, "don't
+  double-count correlated signals") that doesn't exist yet — safe to skip
+  today only because Form 4 and 13F are genuinely independent filings.
+- **Live-validated the mechanism, not a live convergent example.** Ingesting
+  ~50 real Form 4 filings and 15 real 13F filings produced zero real
+  companies with both an insider and institutional signal in the same
+  window (5 insider candidates vs. 1,073 institutional candidates, no
+  overlap) — expected at this ingestion scale, not a bug. The
+  `INSIDER_AND_INSTITUTIONAL_ACCUMULATING` and
+  `MIXED_INSIDER_BUYING_INSTITUTIONAL_SELLING` code paths are fully
+  exercised by `tests/test_convergence_engine.py`'s synthetic scenarios.
+- Component weights are still an unfit heuristic (same caveat as Phase 3),
+  and institution-quality weighting (spec §14) still doesn't exist.

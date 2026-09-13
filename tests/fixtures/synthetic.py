@@ -11,6 +11,7 @@ from capint.models.company import Company
 from capint.models.entity import Entity, EntityType
 from capint.models.event import Event, EventType
 from capint.models.insider import InsiderTransaction, InsiderTransactionType
+from capint.models.institution import InstitutionalHolding, InstitutionalManager, InstitutionalManagerType, InstitutionalPositionStatus
 from capint.models.person import Person, PersonCompanyRole
 from capint.models.source import Document, Source, SourceTier
 
@@ -106,6 +107,71 @@ def make_insider_purchase_event(
         filing_form_type="Form 4",
     )
     session.add(txn)
+    session.flush()
+
+    return event
+
+
+def make_institution(session: Session, name: str = "Sample Capital Management, LLC (SYNTHETIC)") -> InstitutionalManager:
+    entity = Entity(entity_type=EntityType.INSTITUTION, canonical_name=name)
+    session.add(entity)
+    session.flush()
+    institution = InstitutionalManager(entity_id=entity.id, manager_type=InstitutionalManagerType.OTHER)
+    session.add(institution)
+    session.flush()
+    return institution
+
+
+def make_institutional_holding_event(
+    session: Session,
+    *,
+    company: Company,
+    institution: InstitutionalManager,
+    source: Source,
+    period_of_report,
+    publication_time: datetime,
+    shares_held: str,
+    market_value_usd: str,
+    shares_change: str | None,
+    position_status: InstitutionalPositionStatus,
+) -> Event:
+    """Builds a full Event + Document + InstitutionalHolding chain,
+    mirroring what a real 13F ingestion would produce."""
+    document = Document(
+        source_id=source.id,
+        external_id="0000000000-00-000000-SYNTHETIC-13F",
+        url="https://www.sec.gov/synthetic-fixture-13f",
+        retrieved_at=publication_time,
+    )
+    session.add(document)
+    session.flush()
+
+    event_time = datetime.combine(period_of_report, datetime.min.time(), tzinfo=timezone.utc)
+    event = Event(
+        event_type=EventType.INSTITUTIONAL_POSITION_CHANGE,
+        primary_entity_id=company.entity_id,
+        event_time=event_time,
+        publication_time=publication_time,
+        source_id=source.id,
+        document_id=document.id,
+        confidence=1.0,
+        raw_data_reference=f"document:{document.id}",
+    )
+    session.add(event)
+    session.flush()
+
+    holding = InstitutionalHolding(
+        event_id=event.id,
+        institution_entity_id=institution.entity_id,
+        company_entity_id=company.entity_id,
+        period_of_report=period_of_report,
+        shares_held=Decimal(shares_held),
+        market_value_usd=Decimal(market_value_usd),
+        shares_change=Decimal(shares_change) if shares_change is not None else None,
+        position_status=position_status,
+        filing_form_type="13F-HR",
+    )
+    session.add(holding)
     session.flush()
 
     return event

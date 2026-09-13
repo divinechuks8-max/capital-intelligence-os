@@ -6,14 +6,29 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from capint import temporal
-from capint.api.schemas import CompanyOut, EventOut, InsiderRadarEntryOut, InstitutionalHoldingOut, InstitutionOut
+from capint.api.schemas import (
+    CompanyOut,
+    ConvergenceEntryOut,
+    EventOut,
+    InsiderRadarEntryOut,
+    InstitutionalHoldingOut,
+    InstitutionalRadarEntryOut,
+    InstitutionOut,
+)
+from capint.convergence.engine import compute_convergence
 from capint.db import get_session
 from capint.models.company import Company
 from capint.models.entity import Entity
 from capint.models.event import Event, EventType
 from capint.models.institution import InstitutionalHolding, InstitutionalManager
 from capint.radar.insider_radar import compute_insider_radar
-from capint.scoring.insider_conviction import DEFAULT_BASELINE_LOOKBACK_DAYS, DEFAULT_WINDOW_DAYS
+from capint.radar.institutional_radar import compute_institutional_radar
+from capint.scoring.insider_conviction import DEFAULT_BASELINE_LOOKBACK_DAYS as INSIDER_DEFAULT_BASELINE_LOOKBACK_DAYS
+from capint.scoring.insider_conviction import DEFAULT_WINDOW_DAYS as INSIDER_DEFAULT_WINDOW_DAYS
+from capint.scoring.institutional_accumulation import (
+    DEFAULT_BASELINE_LOOKBACK_DAYS as INSTITUTIONAL_DEFAULT_BASELINE_LOOKBACK_DAYS,
+)
+from capint.scoring.institutional_accumulation import DEFAULT_WINDOW_DAYS as INSTITUTIONAL_DEFAULT_WINDOW_DAYS
 
 app = FastAPI(title="Capital Intelligence OS", version="0.1.0")
 
@@ -138,8 +153,8 @@ def list_institutional_holdings(
 @app.get("/api/v1/radar/insider", response_model=list[InsiderRadarEntryOut])
 def insider_radar(
     as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
-    window_days: int = Query(default=DEFAULT_WINDOW_DAYS, ge=1, le=3650),
-    baseline_lookback_days: int = Query(default=DEFAULT_BASELINE_LOOKBACK_DAYS, ge=1, le=36500),
+    window_days: int = Query(default=INSIDER_DEFAULT_WINDOW_DAYS, ge=1, le=3650),
+    baseline_lookback_days: int = Query(default=INSIDER_DEFAULT_BASELINE_LOOKBACK_DAYS, ge=1, le=36500),
     top_n: int = Query(default=25, ge=1, le=500),
     session: Session = Depends(get_session),
 ) -> list[InsiderRadarEntryOut]:
@@ -158,6 +173,54 @@ def insider_radar(
         top_n=top_n,
     )
     return [InsiderRadarEntryOut.from_score(s) for s in scores]
+
+
+@app.get("/api/v1/radar/institutional", response_model=list[InstitutionalRadarEntryOut])
+def institutional_radar(
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    window_days: int = Query(default=INSTITUTIONAL_DEFAULT_WINDOW_DAYS, ge=1, le=3650),
+    baseline_lookback_days: int = Query(default=INSTITUTIONAL_DEFAULT_BASELINE_LOOKBACK_DAYS, ge=1, le=36500),
+    top_n: int = Query(default=25, ge=1, le=500),
+    session: Session = Depends(get_session),
+) -> list[InstitutionalRadarEntryOut]:
+    """Companies with the strongest 13F institutional accumulation in the
+    trailing `window_days`, ranked by score. See
+    capint.scoring.institutional_accumulation for what "accumulation"
+    means here and why.
+    """
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    scores = compute_institutional_radar(
+        session,
+        as_of=cutoff,
+        window_days=window_days,
+        baseline_lookback_days=baseline_lookback_days,
+        top_n=top_n,
+    )
+    return [InstitutionalRadarEntryOut.from_score(s) for s in scores]
+
+
+@app.get("/api/v1/radar/convergence", response_model=list[ConvergenceEntryOut])
+def convergence_radar(
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    insider_window_days: int = Query(default=INSIDER_DEFAULT_WINDOW_DAYS, ge=1, le=3650),
+    institutional_window_days: int = Query(default=INSTITUTIONAL_DEFAULT_WINDOW_DAYS, ge=1, le=3650),
+    top_n: int = Query(default=25, ge=1, le=500),
+    session: Session = Depends(get_session),
+) -> list[ConvergenceEntryOut]:
+    """Companies where independent insider and institutional signals agree
+    (or disagree) — a two-family down-scoped stand-in for the spec's full
+    Convergence Engine (§29). See capint.convergence.engine's module
+    docstring for exactly what that means and doesn't mean yet.
+    """
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    entries = compute_convergence(
+        session,
+        as_of=cutoff,
+        insider_window_days=insider_window_days,
+        institutional_window_days=institutional_window_days,
+        top_n=top_n,
+    )
+    return [ConvergenceEntryOut.from_entry(e) for e in entries]
 
 
 @app.get("/health")

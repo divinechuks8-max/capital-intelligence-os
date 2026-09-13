@@ -108,3 +108,61 @@ def test_insider_radar_endpoint_returns_explainable_entry(session):
     assert len(entry["components"]) == 4
     assert len(entry["evidence"]) == 1
     assert len(entry["explanation"]) >= 1
+
+
+def test_institutional_radar_and_convergence_endpoints(session):
+    from datetime import date
+
+    from capint.models.institution import InstitutionalPositionStatus
+
+    from tests.fixtures.synthetic import make_institution, make_institutional_holding_event
+
+    source = make_sec_source(session)
+    company = make_company(session)
+    person = make_person(session)
+    institution = make_institution(session)
+
+    make_insider_purchase_event(
+        session,
+        company=company,
+        person=person,
+        source=source,
+        event_time=dt(2026, 5, 20),
+        publication_time=dt(2026, 5, 20),
+        shares="1000",
+        price="10.00",
+    )
+    make_institutional_holding_event(
+        session,
+        company=company,
+        institution=institution,
+        source=source,
+        period_of_report=date(2026, 3, 31),
+        publication_time=dt(2026, 5, 15),
+        shares_held="1000",
+        market_value_usd="50000",
+        shares_change=None,
+        position_status=InstitutionalPositionStatus.NEW,
+    )
+    session.commit()
+
+    client = next(make_client(session))
+
+    inst_resp = client.get(
+        "/api/v1/radar/institutional", params={"as_of": "2026-06-01T00:00:00Z", "window_days": 365}
+    )
+    assert inst_resp.status_code == 200
+    inst_entries = inst_resp.json()
+    assert len(inst_entries) == 1
+    assert len(inst_entries[0]["components"]) == 4
+
+    conv_resp = client.get(
+        "/api/v1/radar/convergence",
+        params={"as_of": "2026-06-01T00:00:00Z", "insider_window_days": 30, "institutional_window_days": 365},
+    )
+    assert conv_resp.status_code == 200
+    conv_entries = conv_resp.json()
+    entry = next(e for e in conv_entries if e["company_entity_id"] == str(company.entity_id))
+    assert entry["label"] == "INSIDER_AND_INSTITUTIONAL_ACCUMULATING"
+    assert entry["insider_score"] is not None
+    assert entry["institutional_score"] is not None
