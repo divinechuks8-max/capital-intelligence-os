@@ -87,6 +87,20 @@ def _attach_company_profile(session: Session, entity_id, name: str) -> Company:
 
 
 def get_or_create_person(session: Session, cik: str, name: str) -> Person:
+    """Resolves by CIK across every adapter that identifies people this way
+    (Form 4 owners, Schedule 13D/13G individual reporting persons, ...).
+
+    That cross-adapter reuse is exactly why the ident-exists-but-no-Person
+    branch below matters: capint.ingestion.sec_13dg can first create a
+    bare Entity(type=OTHER) for a CIK it saw as a non-individual reporting
+    person (or one whose type code it couldn't parse), then later see the
+    same CIK unambiguously marked "IN" (individual). Without
+    _attach_person_profile, that second call would fall through to
+    "create a new Entity", producing a second EntityIdentifier row for the
+    same CIK — found the hard way, live, when that happened for real
+    during Phase 6 validation and the next lookup raised
+    MultipleResultsFound.
+    """
     ident = session.execute(
         select(EntityIdentifier).where(
             EntityIdentifier.identifier_type == IdentifierType.CIK,
@@ -94,15 +108,28 @@ def get_or_create_person(session: Session, cik: str, name: str) -> Person:
         )
     ).scalar_one_or_none()
     if ident is not None:
-        existing = session.get(Person, ident.entity_id)
-        if existing is not None:
-            return existing
+        return session.get(Person, ident.entity_id) or _attach_person_profile(session, ident.entity_id)
 
     entity = Entity(entity_type=EntityType.PERSON, canonical_name=name)
     session.add(entity)
     session.flush()
     session.add(EntityIdentifier(entity_id=entity.id, identifier_type=IdentifierType.CIK, identifier_value=cik, is_primary=True))
     person = Person(entity_id=entity.id)
+    session.add(person)
+    session.flush()
+    return person
+
+
+def _attach_person_profile(session: Session, entity_id) -> Person:
+    """An Entity/CIK identifier can predate a Person profile row — e.g. a
+    Schedule 13D/13G reporting person first resolved as a bare
+    Entity(type=OTHER) under this CIK, now confirmed to actually be an
+    individual. Corrects entity_type too: whatever created the row first
+    was wrong about what kind of entity this CIK identifies."""
+    entity = session.get(Entity, entity_id)
+    if entity is not None and entity.entity_type != EntityType.PERSON:
+        entity.entity_type = EntityType.PERSON
+    person = Person(entity_id=entity_id)
     session.add(person)
     session.flush()
     return person

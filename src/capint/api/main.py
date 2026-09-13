@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from capint import temporal
 from capint.api.schemas import (
+    BeneficialOwnershipDisclosureOut,
     CompanyOut,
     ConvergenceEntryOut,
     EventOut,
@@ -21,6 +22,7 @@ from capint.models.company import Company
 from capint.models.entity import Entity
 from capint.models.event import Event, EventType
 from capint.models.institution import InstitutionalHolding, InstitutionalManager
+from capint.models.ownership import BeneficialOwnershipDisclosure
 from capint.radar.insider_radar import compute_insider_radar
 from capint.radar.institutional_radar import compute_institutional_radar
 from capint.scoring.insider_conviction import DEFAULT_BASELINE_LOOKBACK_DAYS as INSIDER_DEFAULT_BASELINE_LOOKBACK_DAYS
@@ -147,6 +149,55 @@ def list_institutional_holdings(
             position_status=holding.position_status,
         )
         for holding, event, institution_entity in rows
+    ]
+
+
+@app.get("/api/v1/ownership-disclosures", response_model=list[BeneficialOwnershipDisclosureOut])
+def list_ownership_disclosures(
+    company_entity_id: UUID | None = None,
+    filer_entity_id: UUID | None = None,
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    session: Session = Depends(get_session),
+) -> list[BeneficialOwnershipDisclosureOut]:
+    """Schedule 13D (activist stake) and 13G (passive major holder)
+    disclosures, point-in-time by `as_of` against Event.publication_time —
+    the actual EDGAR acceptance timestamp, kept separate from
+    `event_date` (spec §13's "as of" / "filed on" distinction, same as
+    /api/v1/holdings)."""
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    stmt = (
+        select(BeneficialOwnershipDisclosure, Event, Entity)
+        .join(Event, BeneficialOwnershipDisclosure.event_id == Event.id)
+        .join(Entity, BeneficialOwnershipDisclosure.filer_entity_id == Entity.id)
+        .where(Event.publication_time <= cutoff)
+    )
+    if company_entity_id is not None:
+        stmt = stmt.where(BeneficialOwnershipDisclosure.company_entity_id == company_entity_id)
+    if filer_entity_id is not None:
+        stmt = stmt.where(BeneficialOwnershipDisclosure.filer_entity_id == filer_entity_id)
+    stmt = stmt.order_by(Event.publication_time)
+
+    rows = session.execute(stmt).all()
+    return [
+        BeneficialOwnershipDisclosureOut(
+            event_id=event.id,
+            filer_entity_id=disclosure.filer_entity_id,
+            filer_name=filer_entity.canonical_name,
+            company_entity_id=disclosure.company_entity_id,
+            schedule_type=disclosure.schedule_type,
+            filer_type_code=disclosure.filer_type_code,
+            shares_beneficially_owned=disclosure.shares_beneficially_owned,
+            percent_of_class=disclosure.percent_of_class,
+            sole_voting_power=disclosure.sole_voting_power,
+            shared_voting_power=disclosure.shared_voting_power,
+            sole_dispositive_power=disclosure.sole_dispositive_power,
+            shared_dispositive_power=disclosure.shared_dispositive_power,
+            event_date=disclosure.event_date,
+            publication_time=event.publication_time,
+            stated_purpose=disclosure.stated_purpose,
+            is_joint_filing=disclosure.is_joint_filing,
+        )
+        for disclosure, event, filer_entity in rows
     ]
 
 

@@ -3,7 +3,7 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from capint.adapters.sec_edgar import SECEdgarForm4Adapter
-from capint.ingestion.sec_form4 import run_ingestion
+from capint.ingestion.sec_form4 import get_or_create_person, run_ingestion
 from capint.models.entity import Entity, EntityIdentifier, EntityType, IdentifierType
 from capint.models.event import Event, EventType
 from capint.models.insider import InsiderTransaction, InsiderTransactionType
@@ -89,3 +89,40 @@ def test_rerunning_ingestion_is_idempotent(session):
 
     all_events = session.execute(select(Event)).scalars().all()
     assert len(all_events) == 1  # no duplicate row was created
+
+
+def test_get_or_create_person_attaches_profile_to_pre_existing_bare_entity(session):
+    """Regression test: found live during Phase 6 validation. If some
+    other adapter (capint.ingestion.sec_13dg, in practice) already
+    resolved a CIK to a bare Entity(type=OTHER) with no Person profile —
+    e.g. because it first saw that CIK as a non-individual reporting
+    person — get_or_create_person must attach a Person profile to that
+    SAME entity rather than creating a second Entity/EntityIdentifier for
+    the same CIK. Before the fix, this raised MultipleResultsFound on the
+    very next CIK lookup."""
+    entity = Entity(entity_type=EntityType.OTHER, canonical_name="Some Trust (SYNTHETIC)")
+    session.add(entity)
+    session.flush()
+    session.add(
+        EntityIdentifier(entity_id=entity.id, identifier_type=IdentifierType.CIK, identifier_value="0009999999", is_primary=True)
+    )
+    session.flush()
+
+    person = get_or_create_person(session, "0009999999", "Some Trust (SYNTHETIC)")
+    session.commit()
+
+    assert person.entity_id == entity.id
+    session.refresh(entity)
+    assert entity.entity_type == EntityType.PERSON
+
+    identifiers = session.execute(
+        select(EntityIdentifier).where(
+            EntityIdentifier.identifier_type == IdentifierType.CIK,
+            EntityIdentifier.identifier_value == "0009999999",
+        )
+    ).scalars().all()
+    assert len(identifiers) == 1  # no duplicate identifier row
+
+    # A second call must not raise MultipleResultsFound and must return the same person.
+    again = get_or_create_person(session, "0009999999", "Some Trust (SYNTHETIC)")
+    assert again.entity_id == entity.id

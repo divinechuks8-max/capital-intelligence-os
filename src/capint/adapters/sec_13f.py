@@ -37,7 +37,6 @@ Scope of this increment:
 
 from __future__ import annotations
 
-import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -48,23 +47,21 @@ from xml.etree import ElementTree
 import httpx
 
 from capint.adapters.base import SourceAdapter
-from capint.adapters.sec_edgar import ATOM_NS, ACCESSION_RE, CIK_IN_PATH_RE, FilingRef, _parse_cik, _text
+from capint.adapters.sec_common import (
+    ACCESSION_RE,
+    ATOM_NS,
+    CIK_IN_PATH_RE,
+    FilingRef,
+    RateLimitedSecClient,
+    parse_cik,
+    strip_namespaces,
+    xml_text,
+)
 
 CURRENT_FILINGS_URL = (
     "https://www.sec.gov/cgi-bin/browse-edgar"
     "?action=getcurrent&type={form_type}&company=&dateb=&owner=include&count={count}&output=atom"
 )
-
-
-def _strip_namespaces(root: ElementTree.Element) -> ElementTree.Element:
-    """13F's two documents use two different XML namespaces (and the
-    namespace URI even varies by schemaVersion in the wild). Stripping
-    tags down to their local name lets every .find() below stay
-    namespace-agnostic instead of juggling multiple NS maps."""
-    for el in root.iter():
-        if isinstance(el.tag, str) and "}" in el.tag:
-            el.tag = el.tag.split("}", 1)[1]
-    return root
 
 
 @dataclass(frozen=True)
@@ -98,33 +95,14 @@ class SEC13FAdapter(SourceAdapter):
         client: httpx.Client | None = None,
         min_request_interval: float = 0.2,
     ) -> None:
-        if not user_agent.strip():
-            raise ValueError(
-                "SEC EDGAR requires an identifying User-Agent (org/individual + contact email) "
-                "per its fair-access policy — refusing to send anonymous requests. "
-                "Set SEC_EDGAR_USER_AGENT."
-            )
-        self._client = client or httpx.Client(timeout=20.0)
-        self._headers = {"User-Agent": user_agent, "Accept-Encoding": "gzip, deflate"}
-        self._min_interval = min_request_interval
-        self._last_request_at: float | None = None
-
-    def _get(self, url: str) -> httpx.Response:
-        if self._last_request_at is not None:
-            elapsed = time.monotonic() - self._last_request_at
-            if elapsed < self._min_interval:
-                time.sleep(self._min_interval - elapsed)
-        resp = self._client.get(url, headers=self._headers)
-        self._last_request_at = time.monotonic()
-        resp.raise_for_status()
-        return resp
+        self._http = RateLimitedSecClient(user_agent, client=client, min_request_interval=min_request_interval)
 
     def fetch_current_13f_filings(self, count: int = 100) -> list[FilingRef]:
         """The most recent `count` feed entries with form type exactly
         "13F-HR" (amendments excluded — see module docstring), deduplicated
         to unique accessions."""
         url = CURRENT_FILINGS_URL.format(form_type="13F-HR", count=count)
-        resp = self._get(url)
+        resp = self._http.get(url)
         root = ElementTree.fromstring(resp.content)
 
         seen: dict[str, FilingRef] = {}
@@ -134,7 +112,7 @@ class SEC13FAdapter(SourceAdapter):
             if form_type != "13F-HR":
                 continue
 
-            entry_id = _text(entry, "a:id", ATOM_NS) or ""
+            entry_id = xml_text(entry, "a:id", ATOM_NS) or ""
             accession_match = ACCESSION_RE.search(entry_id)
             if not accession_match:
                 continue
@@ -148,7 +126,7 @@ class SEC13FAdapter(SourceAdapter):
             if not cik_match:
                 continue
 
-            updated_text = _text(entry, "a:updated", ATOM_NS)
+            updated_text = xml_text(entry, "a:updated", ATOM_NS)
             filed_at = datetime.fromisoformat(updated_text) if updated_text else datetime.now().astimezone()
 
             seen[accession] = FilingRef(
@@ -167,7 +145,7 @@ class SEC13FAdapter(SourceAdapter):
         accession_nodash = filing.accession_number.replace("-", "")
         base = f"https://www.sec.gov/Archives/edgar/data/{filing.cik_for_path}/{accession_nodash}"
 
-        index = self._get(f"{base}/index.json").json()
+        index = self._http.get(f"{base}/index.json").json()
         items = index.get("directory", {}).get("item", [])
         xml_names = [i["name"] for i in items if i["name"].lower().endswith(".xml")]
         if "primary_doc.xml" not in [n.lower() for n in xml_names]:
@@ -178,21 +156,21 @@ class SEC13FAdapter(SourceAdapter):
         cover_name = next(n for n in xml_names if n.lower() == "primary_doc.xml")
         info_table_name = info_table_names[0]
 
-        cover_root = _strip_namespaces(ElementTree.fromstring(self._get(f"{base}/{cover_name}").content))
-        filer_cik = _parse_cik(_text(cover_root, "headerData/filerInfo/filer/credentials/cik") or filing.cik_for_path)
-        filer_name = _text(cover_root, "formData/coverPage/filingManager/name") or "UNKNOWN"
-        period_text = _text(cover_root, "headerData/filerInfo/periodOfReport")
+        cover_root = strip_namespaces(ElementTree.fromstring(self._http.get(f"{base}/{cover_name}").content))
+        filer_cik = parse_cik(xml_text(cover_root, "headerData/filerInfo/filer/credentials/cik") or filing.cik_for_path)
+        filer_name = xml_text(cover_root, "formData/coverPage/filingManager/name") or "UNKNOWN"
+        period_text = xml_text(cover_root, "headerData/filerInfo/periodOfReport")
         if period_text is None:
             return None
         period_of_report = datetime.strptime(period_text, "%m-%d-%Y").date()
 
-        info_root = _strip_namespaces(ElementTree.fromstring(self._get(f"{base}/{info_table_name}").content))
+        info_root = strip_namespaces(ElementTree.fromstring(self._http.get(f"{base}/{info_table_name}").content))
         by_cusip: dict[str, dict[str, Any]] = {}
         for row in info_root.findall("infoTable"):
-            cusip = _text(row, "cusip")
-            issuer_name = _text(row, "nameOfIssuer")
-            shares_text = _text(row, "shrsOrPrnAmt/sshPrnamt")
-            value_text = _text(row, "value")
+            cusip = xml_text(row, "cusip")
+            issuer_name = xml_text(row, "nameOfIssuer")
+            shares_text = xml_text(row, "shrsOrPrnAmt/sshPrnamt")
+            value_text = xml_text(row, "value")
             if cusip is None or shares_text is None or value_text is None:
                 continue
             try:

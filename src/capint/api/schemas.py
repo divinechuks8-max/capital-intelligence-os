@@ -11,6 +11,7 @@ from capint.convergence.engine import ConvergenceEntry, ConvergenceLabel
 from capint.models.entity import EntityType
 from capint.models.event import EventType
 from capint.models.institution import InstitutionalManagerType, InstitutionalPositionStatus
+from capint.models.ownership import ScheduleType
 from capint.scoring.insider_conviction import InsiderConvictionScore
 from capint.scoring.institutional_accumulation import InstitutionalAccumulationScore
 
@@ -65,6 +66,33 @@ class InstitutionalHoldingOut(BaseModel):
     market_value_usd: Decimal
     shares_change: Decimal | None
     position_status: InstitutionalPositionStatus
+
+
+class BeneficialOwnershipDisclosureOut(BaseModel):
+    """Keeps `event_date` (the triggering ownership event) and
+    `publication_time` (when EDGAR accepted the filing) separate, same
+    reasoning as InstitutionalHoldingOut — a 13D/13G can lag its event_date
+    by days. `stated_purpose` is the filer's own Item 4 narrative verbatim
+    (13D only) — a fact, not this system's interpretation."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: UUID
+    filer_entity_id: UUID
+    filer_name: str
+    company_entity_id: UUID
+    schedule_type: ScheduleType
+    filer_type_code: str | None
+    shares_beneficially_owned: Decimal | None
+    percent_of_class: Decimal | None
+    sole_voting_power: Decimal | None
+    shared_voting_power: Decimal | None
+    sole_dispositive_power: Decimal | None
+    shared_dispositive_power: Decimal | None
+    event_date: date | None
+    publication_time: datetime
+    stated_purpose: str | None
+    is_joint_filing: bool
 
 
 class ScoreComponentOut(BaseModel):

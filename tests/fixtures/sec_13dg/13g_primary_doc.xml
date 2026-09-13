@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?><edgarSubmission xmlns="http://www.sec.gov/edgar/schedule13g" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <schemaVersion>X0202</schemaVersion>
+<headerData>
+    <submissionType>SCHEDULE 13G</submissionType>
+    <filerInfo>
+      <filer>
+        <filerCredentials>
+          <cik>0001996097</cik>
+          <ccc>XXXXXXXX</ccc>
+        </filerCredentials>
+      </filer>
+      <liveTestFlag>LIVE</liveTestFlag>
+
+
+
+    </filerInfo>
+  </headerData>
+  <formData>
+    <coverPageHeader>
+      <securitiesClassTitle>Common stock, par value $0.0001 per share</securitiesClassTitle>
+      <eventDateRequiresFilingThisStatement>06/30/2026</eventDateRequiresFilingThisStatement>
+      <issuerInfo>
+        <issuerCik>0001785279</issuerCik>
+        <issuerName>Metagenomi Therapeutics, Inc.</issuerName>
+        <issuerCusips>
+          <issuerCusipNumber>59102M104</issuerCusipNumber>
+        </issuerCusips>
+        <issuerPrincipalExecutiveOfficeAddress>
+          <street1 xmlns="http://www.sec.gov/edgar/common">5959 HORTON STREET, 7TH FLOOR</street1>
+          <city xmlns="http://www.sec.gov/edgar/common">EMERYVILLE</city>
+          <stateOrCountry xmlns="http://www.sec.gov/edgar/common">CA</stateOrCountry>
+          <zipCode xmlns="http://www.sec.gov/edgar/common">94608</zipCode>
+        </issuerPrincipalExecutiveOfficeAddress>
+      </issuerInfo>
+      <designateRulesPursuantThisScheduleFiled>
+        <designateRulePursuantThisScheduleFiled>Rule 13d-1(d)</designateRulePursuantThisScheduleFiled>
+      </designateRulesPursuantThisScheduleFiled>
+    </coverPageHeader>
+    <coverPageHeaderReportingPersonDetails>
+
+
+      <reportingPersonName>Thomas Brian C.</reportingPersonName>
+      <citizenshipOrOrganization>X1</citizenshipOrOrganization>
+      <reportingPersonBeneficiallyOwnedNumberOfShares>
+        <soleVotingPower>2762142</soleVotingPower>
+        <sharedVotingPower>0</sharedVotingPower>
+        <soleDispositivePower>2762142</soleDispositivePower>
+        <sharedDispositivePower>0</sharedDispositivePower>
+      </reportingPersonBeneficiallyOwnedNumberOfShares>
+      <reportingPersonBeneficiallyOwnedAggregateNumberOfShares>2762142</reportingPersonBeneficiallyOwnedAggregateNumberOfShares>
+      <aggregateAmountExcludesCertainSharesFlag>N</aggregateAmountExcludesCertainSharesFlag>
+      <classPercent>7.3</classPercent>
+      <typeOfReportingPerson>IN</typeOfReportingPerson>
+    </coverPageHeaderReportingPersonDetails>
+    <items>
+      <item1>
+        <issuerName>Metagenomi Therapeutics, Inc.</issuerName>
+        <issuerPrincipalExecutiveOfficeAddress>5959 HORTON STREET, 7TH FLOOR, EMERYVILLE, CA, 94608</issuerPrincipalExecutiveOfficeAddress>
+      </item1>
+      <item2>
+        <filingPersonName>This statement is filed on behalf of Brian Thomas (the "Reporting Person").</filingPersonName>
+        <principalBusinessOfficeOrResidenceAddress>The address of the principal business office of the Reporting Person is 126 The Uplands, Berkeley, CA 94705.</principalBusinessOfficeOrResidenceAddress>
+        <citizenship>The Reporting Person is a citizen of the United States.</citizenship>
+      </item2>
+      <item3>
+        <notApplicableFlag>Y</notApplicableFlag>
+      </item3>
+      <item4>
+        <amountBeneficiallyOwned>The ownership information below represents beneficial ownership of Common stock, par value $0.0001 per share ("Common Stock") of the Issuer as of June 30, 2026, based upon 37,777,105 shares of Common Stock outstanding as of August 6, 2026, as reported in the Issuer's Quarterly Report on Form 10-Q filed with the SEC on August 10, 2026.
+
+The Reporting Person is deemed to be the beneficial owner of 2,762,142 shares of Common Stock, consisting of (i) 2,433,969 shares of Common Stock held of record by the Reporting Person and (ii) 328,173 shares of Common Stock subject to stock options exercisable within 60 days of June 30, 2026 by the Reporting Person.</amountBeneficiallyOwned>
+        <classPercent>7.3%</classPercent>
+        <numberOfSharesPersonHas>
+          <solePowerOrDirectToVote>2,762,142</solePowerOrDirectToVote>
+          <sharedPowerOrDirectToVote>0</sharedPowerOrDirectToVote>
+          <solePowerOrDirectToDispose>2,762,142</solePowerOrDirectToDispose>
+          <sharedPowerOrDirectToDispose>0</sharedPowerOrDirectToDispose>
+        </numberOfSharesPersonHas>
+      </item4>
+      <item5>
+        <notApplicableFlag>Y</notApplicableFlag>
+      </item5>
+      <item6>
+        <notApplicableFlag>Y</notApplicableFlag>
+      </item6>
+      <item7>
+        <notApplicableFlag>Y</notApplicableFlag>
+      </item7>
+      <item8>
+        <notApplicableFlag>Y</notApplicableFlag>
+      </item8>
+      <item9>
+        <notApplicableFlag>Y</notApplicableFlag>
+      </item9>
+      <item10>
+        <notApplicableFlag>Y</notApplicableFlag>
+      </item10>
+    </items>
+    <signatureInformation>
+      <reportingPersonName>Thomas Brian C.</reportingPersonName>
+      <signatureDetails>
+        <signature>/s/ Brian Thomas</signature>
+        <title>Brian Thomas</title>
+        <date>09/10/2026</date>
+      </signatureDetails>
+    </signatureInformation>
+  </formData>
+</edgarSubmission>

@@ -64,6 +64,25 @@ per (institution, company, quarter) — classified NEW / INCREASED /
 DECREASED / UNCHANGED / EXITED by diffing against that institution's prior
 quarter. Whole-filing idempotent: safe to re-run.
 
+## Ingest real SEC Schedule 13D/13G filings
+
+Also requires `SEC_EDGAR_USER_AGENT`:
+
+```bash
+python -m capint.cli ingest-13dg --days-back 7 --limit 100
+```
+
+Unlike Form 4/13F, SEC's legacy "current filings" feed doesn't index
+13D/13G at all — this adapter discovers recent filings via EDGAR's
+full-text-search API instead (see `sec_13dg.py`'s module docstring for how
+that was confirmed, and for the two-different-schema handling: 13D and
+13G are genuinely different XML shapes, not variants of one). Every
+disclosure gets `stated_purpose` populated verbatim from a 13D's Item 4
+narrative (`null` for 13G, which has no such item) — a fact the filer
+wrote, never this system's interpretation. `SCHEDULE 13D` filings become
+`ACTIVIST_STAKE` events, `SCHEDULE 13G` filings become
+`MAJOR_HOLDER_CHANGE` events. Per-disclosure idempotent: safe to re-run.
+
 ## Insider Radar
 
 ```
@@ -115,24 +134,30 @@ pytest
 ```
 
 Runs entirely offline against an in-memory SQLite engine and a mocked HTTP
-transport (`tests/fixtures/sec_form4/`, built from one real, captured,
-public Form 4 filing — SEC filings are U.S. government records, public
-domain under 17 U.S.C. §105). No test depends on SEC's servers being
-reachable.
+transport (`tests/fixtures/sec_form4/`, `sec_13f/`, `sec_13dg/`, each built
+from real, captured public filings — SEC filings are U.S. government
+records, public domain under 17 U.S.C. §105). No test depends on SEC's
+servers being reachable.
 
 ## Layout
 
 - `src/capint/models/` — SQLAlchemy models: Entity/EntityIdentifier,
   Source/Document (provenance), Event, Company, Person/PersonCompanyRole,
-  InsiderTransaction.
+  InsiderTransaction, InstitutionalManager/InstitutionalHolding,
+  BeneficialOwnershipDisclosure.
 - `src/capint/temporal.py` — point-in-time query helpers. Read this before
   writing any historical/backtest query — see its module docstring.
-- `src/capint/adapters/` — source adapters. `sec_edgar.py` fetches and
-  parses SEC Form 4 filings into plain records; adapters never touch the
+- `src/capint/adapters/` — source adapters. `sec_common.py` holds shared
+  plumbing (rate-limited HTTP client, atom-feed/CIK helpers, namespace
+  stripping) that `sec_edgar.py` (Form 4), `sec_13f.py` (13F-HR), and
+  `sec_13dg.py` (Schedule 13D/13G) all build on; adapters never touch the
   database (see `base.py` for why that boundary sits there).
 - `src/capint/ingestion/` — turns adapter records into DB rows: entity
   resolution (get-or-create by external identifier) and idempotent
-  persistence. `sec_form4.py` is the reference implementation.
+  persistence. `sec_form4.py` is the reference implementation, and its
+  `get_or_create_company`/`get_or_create_person` (both CIK-based) are
+  reused directly by `sec_13dg.py` — issuer and individual-reporting-person
+  resolution genuinely unifies across Form 4 and 13D/13G this way.
 - `src/capint/cli.py` — `python -m capint.cli ingest-form4` operational entry point.
 - `src/capint/scoring/insider_conviction.py` — insider-conviction scoring:
   discretionary-purchase filtering, historical-anomaly comparison
@@ -153,13 +178,18 @@ reachable.
   scoring and radar, mirroring Phase 3's insider modules.
 - `src/capint/convergence/engine.py` — the two-family (insider +
   institutional) convergence check described above.
+- `src/capint/adapters/sec_13dg.py` / `src/capint/ingestion/sec_13dg.py` —
+  Schedule 13D/13G adapter and ingestion. Discovers filings via EDGAR
+  full-text-search rather than the atom "current filings" feed (which
+  doesn't index these forms at all — see the adapter's module docstring).
 - `src/capint/api/` — FastAPI app, versioned under `/api/v1`.
 - `migrations/` — Alembic migrations.
 - `tests/fixtures/synthetic.py` — synthetic-only fixture builders for the
   Phase 1 model tests, clearly labeled, never real financial data.
-- `tests/fixtures/sec_form4/` and `tests/fixtures/sec_13f/` — real (not
-  synthetic) fixture data captured from one public filing each, used to
-  test the SEC adapters/ingestion offline.
+- `tests/fixtures/sec_form4/`, `tests/fixtures/sec_13f/`,
+  `tests/fixtures/sec_13dg/` — real (not synthetic) fixture data captured
+  from real public filings, used to test each SEC adapter/ingestion
+  offline.
 
 ## Known limitations (Phase 2)
 
@@ -256,3 +286,36 @@ reachable.
   exercised by `tests/test_convergence_engine.py`'s synthetic scenarios.
 - Component weights are still an unfit heuristic (same caveat as Phase 3),
   and institution-quality weighting (spec §14) still doesn't exist.
+
+## Known limitations (Phase 6)
+
+- **Amendments aren't reconciled** — `SCHEDULE 13D/A` and `SCHEDULE 13G/A`
+  are excluded from ingestion entirely, same as every other adapter here.
+  A material change disclosed only via an amendment (a stake increase, a
+  changed purpose) won't be captured until amendment-reconciliation exists
+  for any of these adapters.
+- **A CIK-less reporting person (a trust, common in joint 13D filings) is
+  deduplicated by exact name match only** — no identifier, so a trust
+  named slightly differently across two filings becomes two Entity rows.
+  Documented in `sec_13dg.py` and `sec_13dg` ingestion module docstrings
+  as a deliberately coarse, best-effort resolution.
+- **No activist-vs-passive scoring or campaign tracking yet.** This phase
+  is ingestion + a bare event vocabulary (ACTIVIST_STAKE /
+  MAJOR_HOLDER_CHANGE) — spec §15's "detect campaign, board pressure,
+  strategic review pressure" is future work once enough disclosure history
+  exists to reason about change over time, not a single filing.
+- **A real bug found via live validation, fixed and covered by a
+  regression test:** `get_or_create_person` (Phase 2 code, reused here)
+  had no fallback for "a CIK already resolves to an Entity, but that
+  Entity has no Person profile" — exactly the situation this phase
+  introduced (a reporting person first seen as a non-individual, later
+  confirmed to be a person). Without the fix, a live batch of 45 real
+  filings hit `MultipleResultsFound` on the second sighting of an affected
+  CIK. Also found and fixed: EDGAR's full-text-search API returns one hit
+  per *document*, not per filing, so an unrelated exhibit could make one
+  accession look like two — `fetch_recent_filings` now deduplicates by
+  accession number, the same pattern the atom-feed adapters already used.
+- Validated against 45 real filings (124 disclosures: individuals,
+  corporations, and joint filings all correctly typed and attributed);
+  confirmed idempotent on re-run; served back through
+  `/api/v1/ownership-disclosures` over HTTP.

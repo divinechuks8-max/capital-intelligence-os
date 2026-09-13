@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?><edgarSubmission xmlns="http://www.sec.gov/edgar/schedule13D" xmlns:com="http://www.sec.gov/edgar/common">
+  <schemaVersion>X0202</schemaVersion>
+<headerData>
+    <submissionType>SCHEDULE 13D</submissionType>
+    <filerInfo>
+      <filer>
+        <filerCredentials>
+          <!-- Field: Pseudo-Tag; ID: Name; Data: Woodman Nicholas -->
+          <cik>0001610500</cik>
+          <ccc>XXXXXXXX</ccc>
+        </filerCredentials>
+      </filer>
+      <liveTestFlag>LIVE</liveTestFlag>
+
+
+
+    </filerInfo>
+  </headerData>
+  <formData>
+    <coverPageHeader>
+      <securitiesClassTitle>Class A Common Stock, par value $.0001 per share</securitiesClassTitle>
+      <dateOfEvent>09/01/2026</dateOfEvent>
+      <previouslyFiledFlag>false</previouslyFiledFlag>
+      <issuerInfo>
+        <issuerCIK>0001500435</issuerCIK>
+        <issuerCusips>
+          <issuerCusipNumber>38268T103</issuerCusipNumber>
+        </issuerCusips>
+        <issuerName>GoPro, Inc.</issuerName>
+        <address>
+          <com:street1>3025 Clearview Way</com:street1>
+          <com:city>San Mateo</com:city>
+          <com:stateOrCountry>CA</com:stateOrCountry>
+          <com:zipCode>94402</com:zipCode>
+        </address>
+      </issuerInfo>
+      <authorizedPersons>
+        <notificationInfo>
+          <personName>Nicholas Woodman</personName>
+          <personPhoneNum>(650) 332-7600</personPhoneNum>
+          <personAddress>
+            <com:street1>c/o GoPro, Inc.</com:street1>
+            <com:street2>3025 Clearview Way</com:street2>
+            <com:city>San Mateo</com:city>
+            <com:stateOrCountry>CA</com:stateOrCountry>
+            <com:zipCode>94402</com:zipCode>
+          </personAddress>
+        </notificationInfo>
+      </authorizedPersons>
+    </coverPageHeader>
+    <reportingPersons>
+      <reportingPersonInfo>
+        <reportingPersonCIK>0001610500</reportingPersonCIK>
+        <reportingPersonNoCIK>N</reportingPersonNoCIK>
+        <reportingPersonName>Woodman Nicholas</reportingPersonName>
+        <fundType>AF</fundType>
+        <fundType>PF</fundType>
+        <legalProceedings>N</legalProceedings>
+        <citizenshipOrOrganization>X1</citizenshipOrOrganization>
+        <soleVotingPower>792059.00</soleVotingPower>
+        <sharedVotingPower>45446219.00</sharedVotingPower>
+        <soleDispositivePower>792059.00</soleDispositivePower>
+        <sharedDispositivePower>45446219.00</sharedDispositivePower>
+        <aggregateAmountOwned>46238278.00</aggregateAmountOwned>
+        <isAggregateExcludeShares>N</isAggregateExcludeShares>
+        <percentOfClass>20.3</percentOfClass>
+        <typeOfReportingPerson>IN</typeOfReportingPerson>
+      </reportingPersonInfo>
+      <reportingPersonInfo>
+        <reportingPersonNoCIK>Y</reportingPersonNoCIK>
+        <reportingPersonName>Woodman Family Trust under Trust Agreement dated March 11, 2011</reportingPersonName>
+        <fundType>WC</fundType>
+        <legalProceedings>N</legalProceedings>
+        <citizenshipOrOrganization>CA</citizenshipOrOrganization>
+        <soleVotingPower>0.00</soleVotingPower>
+        <sharedVotingPower>45446219.00</sharedVotingPower>
+        <soleDispositivePower>0.00</soleDispositivePower>
+        <sharedDispositivePower>45446219.00</sharedDispositivePower>
+        <aggregateAmountOwned>45446219.00</aggregateAmountOwned>
+        <isAggregateExcludeShares>N</isAggregateExcludeShares>
+        <percentOfClass>20.3</percentOfClass>
+        <typeOfReportingPerson>OO</typeOfReportingPerson>
+      </reportingPersonInfo>
+    </reportingPersons>
+    <items1To7>
+      <item1>
+        <securityTitle>Class A Common Stock, par value $.0001 per share</securityTitle>
+        <issuerName>GoPro, Inc.</issuerName>
+        <issuerPrincipalAddress>
+          <com:street1>3025 Clearview Way</com:street1>
+          <com:city>San Mateo</com:city>
+          <com:stateOrCountry>CA</com:stateOrCountry>
+          <com:zipCode>94402</com:zipCode>
+        </issuerPrincipalAddress>
+        <commentText>The Reporting Persons previously reported their beneficial ownership on Schedule 13G pursuant to Rule 13d-1(d), and are filing this Schedule 13D as a result of the Issuer's announcement of its entry into a definitive merger agreement, as further described in this Statement.</commentText>
+      </item1>
+      <item2>
+        <filingPersonName>This statement of beneficial ownership on Schedule 13D is being filed jointly by the following persons (each, a "Reporting Person," and, collectively, the "Reporting Persons"): (i) Nicholas Woodman and (ii) Woodman Family Trust under Trust Agreement dated March 11, 2011 (the "Woodman Family Trust").</filingPersonName>
+        <principalBusinessAddress>The address of the principal business office of each of the Reporting Persons is c/o GoPro, Inc., 3025 Clearview Way, San Mateo, CA, 94402.</principalBusinessAddress>
+        <principalJob>Mr. Woodman serves as Chief Executive Officer and Chairman of the Board of Directors of the Issuer. Mr. Woodman and his spouse are the co-trustees of the Woodman Family Trust.</principalJob>
+        <hasBeenConvicted>During the last five years, none of the Reporting Persons has been convicted in a criminal proceeding (excluding traffic violations or similar misdemeanors).</hasBeenConvicted>
+        <convictionDescription>During the last five years, none of the Reporting Persons has been a party to a civil proceeding of a judicial or administrative body of competent jurisdiction and as a result of such proceeding was or is subject to a judgment, decree or final order enjoining future violation of, or prohibiting or mandating activities subject to, federal or state securities laws or finding any violation with respect to such laws.</convictionDescription>
+        <citizenship>Mr. Woodman is a citizen of the United States. The Woodman Family Trust exists under the laws of California.</citizenship>
+      </item2>
+      <item3>
+        <fundsSource>The shares of Class B Common Stock held by The Woodman Family Trust were acquired in private financings prior to the Issuer's initial public offering. Each share of Class B Common Stock is convertible at the option of its holder into one share of Class A Common Stock.
+
+Certain shares of Class A Common Stock beneficially owned directly by Mr. Woodman were acquired upon the vesting and settlement of restricted stock units and performance stock units granted to Mr. Woodman under the Issuer's equity incentive plans. Such shares were acquired as compensation for services to the Issuer and without the payment of cash consideration by Mr. Woodman.
+
+On November 10, 2025, pursuant to a Subscription Agreement dated November 5, 2025 between the Issuer and the Woodman Family Trust (as further described in the Issuer's Current Report on Form 8-K filed with the Securities and Exchange Commission on November 6, 2025), the Woodman Family Trust purchased 1,129,944 shares of Class A Common Stock from the Issuer at a purchase price of $1.77 per share, for an aggregate purchase price of approximately $2.0 million. The Woodman Family Trust paid the purchase price using funds from working capital.
+
+On July 9, 2026, pursuant to a Securities Purchase Agreement between the Issuer, the Woodman Family Trust and the other purchaser party thereto (the "Securities Purchase Agreement"), the Woodman Family Trust purchased from the Issuer a 6.50% senior secured note having an aggregate principal amount of $15,000,000 (the "Note"). In connection with the Woodman Family Trust's purchase of the Note, the Issuer issued to the Woodman Family Trust, as part of the same investment unit and without the payment of additional cash consideration, a warrant to purchase 19,280,205 shares of Class B Common Stock at an exercise price of $0.778 per share (the "Warrant"). The Woodman Family Trust paid an aggregate purchase price of $15,000,000 for the Note and the Warrant using funds from working capital. The Warrant became exercisable following the Issuer's public announcement of its entry into the Agreement and Plan of Merger, dated September 1, 2026, among the Issuer, Action Acquisitions LLC and Starman Optical, Inc.
+
+The foregoing descriptions of the Securities Purchase Agreement and Warrant do not purport to be complete, and are qualified in their entirety by reference to the full text of such agreements, copies of which are filed as Exhibits 99.2 and 99.3 of this Statement.</fundsSource>
+      </item3>
+      <item4>
+        <transactionPurpose>The information set forth in Items 3 and 6 of this Schedule 13D is hereby incorporated by reference into this Item 4.
+
+Mr. Woodman serves as Chief Executive Officer and Chairman of the Board of Directors of the Issuer and, in such capacity, may have influence over the corporate activities of the Issuer, including activities which may relate to items described in subparagraphs (a) through (j) of Item 4 of Schedule 13D. The Reporting Person may from time to time buy or sell securities of the Issuer as appropriate for his personal circumstances.
+
+The Reporting Persons, either directly or indirectly through Mr. Woodman, may engage in discussions from time to time with the Issuer's board of directors, the Issuer's management or the Issuer's other stockholders. These discussions may be with respect to (i) acquiring or disposing of the shares or other securities of the Issuer; (ii) maintaining or changing the Issuer's business, operations, governance, management, strategy or capitalization; or (iii) implementing transactions that may relate to or may result in any matter set forth in paragraphs (a) through (j) of Item 4 of Schedule 13D. Additionally, the Reporting Persons may acquire additional securities through open market transactions, privately negotiated transactions or other methods.
+
+In connection with the foregoing, and as may be appropriate from time to time, each of the Reporting Persons may consider the feasibility and advisability of various alternative courses of action with respect to their investment in the Issuer, including, without limitation: (a) the acquisition or disposition by the Reporting Persons of the shares, including through derivative transactions which may include security-based swaps and short sales; (b) an extraordinary corporate transaction, such as a merger, reorganization or liquidation, involving the Issuer or any of its subsidiaries; (c) a sale or transfer of a material amount of assets of the Issuer or any of its subsidiaries; (d) changes in the present board of directors or management of the Issuer; (e) a material change in the present capitalization or dividend policy of the Issuer; (f) other material changes in the Issuer's business or corporate structure; (g) changes in the Issuer's articles of incorporation or bylaws or other actions that may impede the acquisition of control of the Issuer by any person; (h) causing any class of the Issuer's securities to be delisted from a national securities exchange or to cease to be authorized to be quoted in an inter-dealer quotation system of a registered national securities association; (i) causing a class of equity securities of the Issuer to become eligible for termination of registration pursuant to Section 12 of the Exchange Act; or (j) any action similar to those enumerated above. Except as described in Item 6 and this Item 4 and any plans or proposals that may from time to time be discussed or considered by the directors of the Issuer, including Mr. Woodman in his fiduciary capacity as a director of the Issuer, the Reporting Persons do not currently have any plans or proposals that relate to or would result in any of the actions specified in clause (a) through (j) of this paragraph.
+
+The Reporting Persons intend to review their investment in the Issuer from time to time on the basis of various factors, including the Issuer's business, financial condition, results of operations and prospects, general economic and industry conditions, the securities markets in general and those for the Issuer's stock in particular, as well as other developments.</transactionPurpose>
+      </item4>
+      <item5>
+        <percentageOfClassSecurities>The responses of the Reporting Persons to Rows 7 through 13 of the cover pages of this Schedule 13D are incorporated herein by reference.
+
+Mr. Woodman may be deemed to beneficially own an aggregate of 46,238,278 shares of Class A Common Stock, consisting of (i) 792,059 shares of Class A Common Stock held directly by Mr. Woodman; (ii) 1,129,944 shares of Class A Common Stock held directly by The Woodman Family Trust; (iii) 25,036,070 shares of Class A Common Stock issuable upon the conversion of an equal number of shares of Class B Common Stock held directly by the Woodman Family Trust; and (iv) 19,280,205 shares of Class A Common Stock that the Woodman Family Trust has the right to acquire upon exercise of the Warrant for an equal number of shares of Class B Common Stock and the subsequent conversion of such shares of Class B Common Stock into shares of Class A Common Stock.
+
+The foregoing securities represent approximately 20.6% of the outstanding Class A Common Stock. Of these securities, the Woodman Family Trust beneficially owns an aggregate of 45,446,219 shares of Class A Common Stock, representing approximately 20.3% of the outstanding Class A Common Stock. Mr. Woodman is a co-trustee of the Woodman Family Trust with his spouse, and may therefore be deemed to share voting and dispositive power over the securities held by the Woodman Family Trust.
+
+The foregoing percentages are calculated in accordance with Rule 13d-3 under the Exchange Act based upon (i) 180,097,818 shares of Class A Common Stock issued and outstanding as of August 31, 2026, as reported by the Issuer in the Agreement and Plan of Merger filed as Exhibit 2.1 to the Issuer's Current Report on Form 8-K filed with the Securities and Exchange Commission on September 2, 2026, plus (ii) the 25,036,070 shares of Class A Common Stock issuable upon conversion of the Class B Common Stock held by the Woodman Family Trust and (iii) the 19,280,205 shares of Class A Common Stock that the Woodman Family Trust has the right to acquire upon exercise of the Warrant and subsequent conversion of the underlying Class B Common Stock.</percentageOfClassSecurities>
+        <numberOfShares>The response to Item 5(a) of this Schedule 13D is incorporated by reference.</numberOfShares>
+        <transactionDesc>Except as described in Item 3, neither Reporting Person has effected any transaction in the Class A Common Stock during the past 60 days.</transactionDesc>
+        <listOfShareholders>To the best knowledge of the Reporting Persons, no one other than the Reporting Persons has the right to receive or the power to direct the receipt of dividends from, or the proceeds from the sale of, the Class A Common Stock reported herein as beneficially owned by the Reporting Persons.</listOfShareholders>
+        <date5PercentOwnership>Not applicable.</date5PercentOwnership>
+      </item5>
+      <item6>
+        <contractDescription>The information contained in Item 3 of the Schedule 13D is incorporated by reference into this Item 6.</contractDescription>
+      </item6>
+      <item7>
+        <filedExhibits>Exhibit 99.1 Joint Filing Agreement (filed herewith).
+
+Exhibit 99.2 Securities Purchase Agreement (filed herewith).
+
+Exhibit 99.3 Warrant (filed herewith).</filedExhibits>
+      </item7>
+    </items1To7>
+    <signatureInfo>
+      <signaturePerson>
+        <signatureReportingPerson>Woodman Nicholas</signatureReportingPerson>
+        <signatureDetails>
+          <signature>/s/ Nicholas Woodman</signature>
+          <title>Nicholas Woodman</title>
+          <date>09/09/2026</date>
+        </signatureDetails>
+      </signaturePerson>
+      <signaturePerson>
+        <signatureReportingPerson>Woodman Family Trust under Trust Agreement dated March 11, 2011</signatureReportingPerson>
+        <signatureDetails>
+          <signature>/s/ Nicholas Woodman</signature>
+          <title>Nicholas Woodman, Co-Trustee</title>
+          <date>09/09/2026</date>
+        </signatureDetails>
+      </signaturePerson>
+    </signatureInfo>
+  </formData>
+
+</edgarSubmission>

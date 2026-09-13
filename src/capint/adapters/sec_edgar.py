@@ -2,13 +2,9 @@
 
 Data source: SEC EDGAR. Form 3/4/5 filings are U.S. federal government
 records — public domain under 17 U.S.C. §105, no redistribution
-restriction. Access is still governed by SEC's fair-access policy
-(https://www.sec.gov/os/webmaster-faq#developers): every request must
-carry an identifying User-Agent ("<org/individual> <contact email>"), and
-SEC asks that automated clients stay at or under ~10 requests/second. This
-adapter defaults to a conservative 0.2s minimum gap between requests (~5
-req/s) and requires a non-empty user_agent at construction time — refusing
-to silently send anonymous traffic to a government service.
+restriction. Access is still governed by SEC's fair-access policy — see
+capint.adapters.sec_common.RateLimitedSecClient, which every SEC adapter
+uses for that.
 
 Scope of this increment:
 - Only Form 4 (post-transaction ownership changes), not Form 3 (initial
@@ -28,8 +24,6 @@ Scope of this increment:
 
 from __future__ import annotations
 
-import re
-import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -40,22 +34,20 @@ from xml.etree import ElementTree
 import httpx
 
 from capint.adapters.base import SourceAdapter
+from capint.adapters.sec_common import (
+    ACCESSION_RE,
+    ATOM_NS,
+    CIK_IN_PATH_RE,
+    FilingRef,
+    RateLimitedSecClient,
+    parse_cik,
+    xml_text,
+)
 
-ATOM_NS = {"a": "http://www.w3.org/2005/Atom"}
 CURRENT_FILINGS_URL = (
     "https://www.sec.gov/cgi-bin/browse-edgar"
     "?action=getcurrent&type={form_type}&company=&dateb=&owner=include&count={count}&output=atom"
 )
-ACCESSION_RE = re.compile(r"accession-number=([\d-]+)")
-CIK_IN_PATH_RE = re.compile(r"/data/(\d+)/")
-
-
-@dataclass(frozen=True)
-class FilingRef:
-    accession_number: str  # e.g. "0001193125-26-389607"
-    cik_for_path: str  # any CIK EDGAR will resolve this accession under
-    form_type: str
-    filed_at: datetime  # SEC acceptance timestamp (tz-aware) — our publication_time
 
 
 @dataclass(frozen=True)
@@ -92,24 +84,8 @@ class RawForm4Transaction:
     transaction_index: int  # position within this filing, for idempotency keys
 
 
-def _parse_cik(raw: str) -> str:
-    return raw.strip().lstrip("0").zfill(10) if raw.strip() else raw.strip()
-
-
-def _text(
-    el: ElementTree.Element | None, path: str, ns: dict[str, str] | None = None
-) -> str | None:
-    if el is None:
-        return None
-    found = el.find(path, ns) if ns else el.find(path)
-    if found is None or found.text is None:
-        return None
-    text = found.text.strip()
-    return text or None
-
-
 def _decimal(el: ElementTree.Element | None, path: str) -> Decimal | None:
-    text = _text(el, path)
+    text = xml_text(el, path)
     if text is None:
         return None
     try:
@@ -127,38 +103,19 @@ class SECEdgarForm4Adapter(SourceAdapter):
         client: httpx.Client | None = None,
         min_request_interval: float = 0.2,
     ) -> None:
-        if not user_agent.strip():
-            raise ValueError(
-                "SEC EDGAR requires an identifying User-Agent (org/individual + contact email) "
-                "per its fair-access policy — refusing to send anonymous requests. "
-                "Set SEC_EDGAR_USER_AGENT."
-            )
-        self._client = client or httpx.Client(timeout=15.0)
-        self._headers = {"User-Agent": user_agent, "Accept-Encoding": "gzip, deflate"}
-        self._min_interval = min_request_interval
-        self._last_request_at: float | None = None
-
-    def _get(self, url: str) -> httpx.Response:
-        if self._last_request_at is not None:
-            elapsed = time.monotonic() - self._last_request_at
-            if elapsed < self._min_interval:
-                time.sleep(self._min_interval - elapsed)
-        resp = self._client.get(url, headers=self._headers)
-        self._last_request_at = time.monotonic()
-        resp.raise_for_status()
-        return resp
+        self._http = RateLimitedSecClient(user_agent, client=client, min_request_interval=min_request_interval)
 
     def fetch_current_form4_filings(self, count: int = 100) -> list[FilingRef]:
         """The most recent `count` feed entries, deduplicated to unique
         filings (each filing appears once per named party — issuer and
         every reporting owner — in SEC's current-filings feed)."""
         url = CURRENT_FILINGS_URL.format(form_type="4", count=count)
-        resp = self._get(url)
+        resp = self._http.get(url)
         root = ElementTree.fromstring(resp.content)
 
         seen: dict[str, FilingRef] = {}
         for entry in root.findall("a:entry", ATOM_NS):
-            entry_id = _text(entry, "a:id", ATOM_NS) or ""
+            entry_id = xml_text(entry, "a:id", ATOM_NS) or ""
             accession_match = ACCESSION_RE.search(entry_id)
             if not accession_match:
                 continue
@@ -175,7 +132,7 @@ class SECEdgarForm4Adapter(SourceAdapter):
             category = entry.find("a:category", ATOM_NS)
             form_type = category.get("term") if category is not None else "4"
 
-            updated_text = _text(entry, "a:updated", ATOM_NS)
+            updated_text = xml_text(entry, "a:updated", ATOM_NS)
             filed_at = datetime.fromisoformat(updated_text) if updated_text else datetime.now().astimezone()
 
             seen[accession] = FilingRef(
@@ -193,7 +150,7 @@ class SECEdgarForm4Adapter(SourceAdapter):
         accession_nodash = filing.accession_number.replace("-", "")
         base = f"https://www.sec.gov/Archives/edgar/data/{filing.cik_for_path}/{accession_nodash}"
 
-        index = self._get(f"{base}/index.json").json()
+        index = self._http.get(f"{base}/index.json").json()
         items = index.get("directory", {}).get("item", [])
         xml_name = next(
             (i["name"] for i in items if i["name"].lower().endswith(".xml") and "cal" not in i["name"].lower()),
@@ -202,16 +159,16 @@ class SECEdgarForm4Adapter(SourceAdapter):
         if xml_name is None:
             return [], 0
 
-        xml_resp = self._get(f"{base}/{xml_name}")
+        xml_resp = self._http.get(f"{base}/{xml_name}")
         root = ElementTree.fromstring(xml_resp.content)
 
-        document_type = _text(root, "documentType") or filing.form_type
-        aff_10b5_1 = (_text(root, "aff10b5One") or "false").lower() == "true"
+        document_type = xml_text(root, "documentType") or filing.form_type
+        aff_10b5_1 = (xml_text(root, "aff10b5One") or "false").lower() == "true"
 
         issuer_el = root.find("issuer")
-        issuer_cik = _parse_cik(_text(issuer_el, "issuerCik") or filing.cik_for_path)
-        issuer_name = _text(issuer_el, "issuerName") or "UNKNOWN"
-        issuer_ticker = _text(issuer_el, "issuerTradingSymbol")
+        issuer_cik = parse_cik(xml_text(issuer_el, "issuerCik") or filing.cik_for_path)
+        issuer_name = xml_text(issuer_el, "issuerName") or "UNKNOWN"
+        issuer_ticker = xml_text(issuer_el, "issuerTradingSymbol")
 
         transactions: list[RawForm4Transaction] = []
         derivative_skipped = 0
@@ -219,14 +176,14 @@ class SECEdgarForm4Adapter(SourceAdapter):
 
         for owner_el in root.findall("reportingOwner"):
             owner_id_el = owner_el.find("reportingOwnerId")
-            owner_cik = _parse_cik(_text(owner_id_el, "rptOwnerCik") or "")
-            owner_name = _text(owner_id_el, "rptOwnerName") or "UNKNOWN"
+            owner_cik = parse_cik(xml_text(owner_id_el, "rptOwnerCik") or "")
+            owner_name = xml_text(owner_id_el, "rptOwnerName") or "UNKNOWN"
 
             rel_el = owner_el.find("reportingOwnerRelationship")
-            is_director = (_text(rel_el, "isDirector") or "false").lower() == "true"
-            is_officer = (_text(rel_el, "isOfficer") or "false").lower() == "true"
-            is_ten_pct = (_text(rel_el, "isTenPercentOwner") or "false").lower() == "true"
-            officer_title = _text(rel_el, "officerTitle")
+            is_director = (xml_text(rel_el, "isDirector") or "false").lower() == "true"
+            is_officer = (xml_text(rel_el, "isOfficer") or "false").lower() == "true"
+            is_ten_pct = (xml_text(rel_el, "isTenPercentOwner") or "false").lower() == "true"
+            officer_title = xml_text(rel_el, "officerTitle")
 
             non_deriv_table = root.find("nonDerivativeTable")
             if non_deriv_table is not None:
@@ -235,7 +192,7 @@ class SECEdgarForm4Adapter(SourceAdapter):
                     amounts = txn_el.find("transactionAmounts")
                     post_amounts = txn_el.find("postTransactionAmounts")
 
-                    txn_date_text = _text(txn_el, "transactionDate/value")
+                    txn_date_text = xml_text(txn_el, "transactionDate/value")
                     if txn_date_text is None:
                         continue
                     shares = _decimal(amounts, "transactionShares/value")
@@ -257,10 +214,10 @@ class SECEdgarForm4Adapter(SourceAdapter):
                             is_officer=is_officer,
                             is_ten_percent_owner=is_ten_pct,
                             officer_title=officer_title,
-                            security_title=_text(txn_el, "securityTitle/value") or "Common Stock",
+                            security_title=xml_text(txn_el, "securityTitle/value") or "Common Stock",
                             transaction_date=date.fromisoformat(txn_date_text),
-                            transaction_code=_text(coding, "transactionCode") or "OTHER",
-                            acquired_disposed_code=_text(amounts, "transactionAcquiredDisposedCode/value") or "A",
+                            transaction_code=xml_text(coding, "transactionCode") or "OTHER",
+                            acquired_disposed_code=xml_text(amounts, "transactionAcquiredDisposedCode/value") or "A",
                             shares_transacted=shares,
                             price_per_share=_decimal(amounts, "transactionPricePerShare/value"),
                             shares_owned_after=_decimal(post_amounts, "sharesOwnedFollowingTransaction/value"),

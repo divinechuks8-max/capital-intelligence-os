@@ -9,11 +9,13 @@ from capint.models.institution import (
     InstitutionalManagerType,
     InstitutionalPositionStatus,
 )
+from capint.models.ownership import BeneficialOwnershipDisclosure, ScheduleType
 from capint.models.person import Person, PersonCompanyRole
 from capint.models.source import Document, Source, SourceTier
 
 __all__ = [
     "Base",
+    "BeneficialOwnershipDisclosure",
     "Company",
     "Document",
     "Entity",
@@ -30,6 +32,7 @@ __all__ = [
     "InstitutionalPositionStatus",
     "Person",
     "PersonCompanyRole",
+    "ScheduleType",
     "Source",
     "SourceTier",
 ]

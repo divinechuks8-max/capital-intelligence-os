@@ -79,6 +79,34 @@ def test_institutions_and_holdings_endpoints(session):
     assert "publication_time" in holdings[0]
 
 
+def test_ownership_disclosures_endpoint(session):
+    from datetime import date as _date
+
+    from capint.adapters.sec_13dg import SEC13DGAdapter
+    from capint.ingestion.sec_13dg import run_ingestion as run_13dg_ingestion
+    from tests.fixtures.sec_13dg import make_test_client as make_13dg_test_client
+
+    adapter = SEC13DGAdapter(
+        user_agent="Capital Intelligence OS tests test@example.com",
+        client=make_13dg_test_client(),
+        min_request_interval=0,
+    )
+    run_13dg_ingestion(session, adapter, _date(2026, 9, 1), _date(2026, 9, 13))
+
+    client = next(make_client(session))
+    resp = client.get("/api/v1/ownership-disclosures")
+    assert resp.status_code == 200
+    disclosures = resp.json()
+    assert len(disclosures) == 3
+
+    schedule_types = {d["schedule_type"] for d in disclosures}
+    assert schedule_types == {"SCHEDULE_13D", "SCHEDULE_13G"}
+    thirteen_d_entries = [d for d in disclosures if d["schedule_type"] == "SCHEDULE_13D"]
+    assert all(d["stated_purpose"] for d in thirteen_d_entries)
+    thirteen_g_entries = [d for d in disclosures if d["schedule_type"] == "SCHEDULE_13G"]
+    assert all(d["stated_purpose"] is None for d in thirteen_g_entries)
+
+
 def test_insider_radar_endpoint_returns_explainable_entry(session):
     source = make_sec_source(session)
     company = make_company(session)

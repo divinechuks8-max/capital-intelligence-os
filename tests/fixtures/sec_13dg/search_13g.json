@@ -1,0 +1,18 @@
+{
+  "hits": {
+    "total": {"value": 1, "relation": "eq"},
+    "hits": [
+      {
+        "_id": "0001193125-26-387853:primary_doc.xml",
+        "_source": {
+          "ciks": ["0001785279", "0001996097"],
+          "display_names": ["Metagenomi Therapeutics, Inc.  (MGX)  (CIK 0001785279)", "Thomas Brian C.  (CIK 0001996097)"],
+          "root_forms": ["SCHEDULE 13G"],
+          "file_date": "2026-09-10",
+          "form": "SCHEDULE 13G",
+          "adsh": "0001193125-26-387853"
+        }
+      }
+    ]
+  }
+}

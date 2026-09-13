@@ -1,0 +1,85 @@
+<SEC-DOCUMENT>0001104659-26-106446.txt : 20260909
+<SEC-HEADER>0001104659-26-106446.hdr.sgml : 20260909
+<ACCEPTANCE-DATETIME>20260909202230
+ACCESSION NUMBER:		0001104659-26-106446
+CONFORMED SUBMISSION TYPE:	SCHEDULE 13D
+PUBLIC DOCUMENT COUNT:		4
+FILED AS OF DATE:		20260909
+DATE AS OF CHANGE:		20260909
+
+SUBJECT COMPANY:	
+
+	COMPANY DATA:	
+		COMPANY CONFORMED NAME:			GoPro, Inc.
+		CENTRAL INDEX KEY:			0001500435
+		STANDARD INDUSTRIAL CLASSIFICATION:	PHOTOGRAPHIC EQUIPMENT & SUPPLIES [3861]
+		ORGANIZATION NAME:           	08 Industrial Applications and Services
+		EIN:				770629474
+		STATE OF INCORPORATION:			DE
+		FISCAL YEAR END:			1231
+
+	FILING VALUES:
+		FORM TYPE:		SCHEDULE 13D
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	005-88343
+		FILM NUMBER:		261369412
+
+	BUSINESS ADDRESS:	
+		STREET 1:		3025 CLEARVIEW WAY
+		CITY:			SAN MATEO
+		STATE:			CA
+		ZIP:			94402
+		BUSINESS PHONE:		650-332-7600
+
+	MAIL ADDRESS:	
+		STREET 1:		3025 CLEARVIEW WAY
+		CITY:			SAN MATEO
+		STATE:			CA
+		ZIP:			94402
+
+	FORMER COMPANY:	
+		FORMER CONFORMED NAME:	Woodman Labs, Inc.
+		DATE OF NAME CHANGE:	20100901
+
+FILED BY:		
+
+	COMPANY DATA:	
+		COMPANY CONFORMED NAME:			Woodman Nicholas
+		CENTRAL INDEX KEY:			0001610500
+		ORGANIZATION NAME:           	
+
+	FILING VALUES:
+		FORM TYPE:		SCHEDULE 13D
+
+	MAIL ADDRESS:	
+		STREET 1:		3025 CLEARVIEW WAY
+		CITY:			SAN MATEO
+		STATE:			CA
+		ZIP:			94402
+</SEC-HEADER>
+<DOCUMENT>
+<TYPE>SCHEDULE 13D
+<SEQUENCE>1
+<FILENAME>primary_doc.xml
+<TEXT>
+<XML>
+<?xml version="1.0" encoding="UTF-8"?><edgarSubmission xmlns="http://www.sec.gov/edgar/schedule13D" xmlns:com="http://www.sec.gov/edgar/common">
+  <schemaVersion>X0202</schemaVersion>
+<headerData>
+    <submissionType>SCHEDULE 13D</submissionType>
+    <filerInfo>
+      <filer>
+        <filerCredentials>
+          <!-- Field: Pseudo-Tag; ID: Name; Data: Woodman Nicholas -->
+          <cik>0001610500</cik>
+          <ccc>XXXXXXXX</ccc>
+        </filerCredentials>
+      </filer>
+      <liveTestFlag>LIVE</liveTestFlag>
+
+
+
+    </filerInfo>
+  </headerData>
+  <formData>
+    <coverPag
