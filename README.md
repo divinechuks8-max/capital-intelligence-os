@@ -47,6 +47,23 @@ Entity rows by CIK, and persists Event/InsiderTransaction rows. Safe to
 re-run — already-ingested transactions are skipped by their
 `(accession number, transaction index)` idempotency key.
 
+## Ingest real SEC 13F-HR filings
+
+Also requires `SEC_EDGAR_USER_AGENT`:
+
+```bash
+python -m capint.cli ingest-13f --count 100
+```
+
+Pulls the most recent N entries from EDGAR's current-filings feed (exact
+form type `13F-HR`, amendments excluded), parses each filing's cover page
+(filer identity, period of report) and information table (one row per
+security, aggregated by CUSIP), resolves/creates the `InstitutionalManager`
+by CIK and each `Company` by CUSIP, and persists one `InstitutionalHolding`
+per (institution, company, quarter) — classified NEW / INCREASED /
+DECREASED / UNCHANGED / EXITED by diffing against that institution's prior
+quarter. Whole-filing idempotent: safe to re-run.
+
 ## Insider Radar
 
 ```
@@ -94,13 +111,16 @@ reachable.
   `signals` table yet (see Known limitations).
 - `src/capint/radar/insider_radar.py` — finds candidate companies and ranks
   them by conviction score.
+- `src/capint/adapters/sec_13f.py` / `src/capint/ingestion/sec_13f.py` —
+  13F-HR institutional-holdings adapter and ingestion, mirroring the Form 4
+  split. Resolves companies by CUSIP (not CIK — see Known limitations).
 - `src/capint/api/` — FastAPI app, versioned under `/api/v1`.
 - `migrations/` — Alembic migrations.
 - `tests/fixtures/synthetic.py` — synthetic-only fixture builders for the
   Phase 1 model tests, clearly labeled, never real financial data.
-- `tests/fixtures/sec_form4/` — real (not synthetic) fixture data captured
-  from one public Form 4 filing, used to test the SEC adapter/ingestion
-  offline.
+- `tests/fixtures/sec_form4/` and `tests/fixtures/sec_13f/` — real (not
+  synthetic) fixture data captured from one public filing each, used to
+  test the SEC adapters/ingestion offline.
 
 ## Known limitations (Phase 2)
 
@@ -140,3 +160,28 @@ reachable.
   §84 warns against treating selling as automatically bearish, and building
   that fairly needs its own reasoning (tax-driven sales, diversification,
   10b5-1 plans, etc.), not a mirrored version of this module.
+
+## Known limitations (Phase 4)
+
+- **13F resolves companies by CUSIP; Form 4 resolves them by CIK — nothing
+  cross-links the two.** The same real company can end up as two different
+  `Entity` rows depending on which adapter saw it first. Fixing this needs
+  a maintained CUSIP<->CIK/ticker mapping, not built yet (documented in
+  `capint/ingestion/sec_13f.py`'s module docstring, spec §5).
+- 13F's `value` field is trusted as reported (whole USD) rather than
+  cross-checked per filer — see `sec_13f.py`'s docstring for how that
+  convention was verified against a real filing; a filer whose software
+  still uses the legacy in-thousands convention would have its holdings
+  understated ~1000x, undetected.
+- Only exact form type `13F-HR` is ingested — `13F-HR/A` amendments and
+  `13F-NT` (notice, no holdings) are skipped, same amendment-tracking gap
+  as Form 4.
+- Joint filings attribute every row to the cover page's filing manager,
+  not the specific `otherManager` sub-filer named on each line — a coarser
+  attribution than the source data supports.
+- "Only EDGAR's current-filings feed" limitation applies here too: no
+  historical backfill yet, so most institutions will show a single
+  quarter with `position_status=NEW` until a second quarter is ingested.
+- Institutional-holdings scoring (an "institutional accumulation" signal
+  analogous to Phase 3's insider conviction) is not built yet — Phase 4 is
+  ingestion only, matching the roadmap's Phase 4/5 split.

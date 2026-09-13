@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<edgarSubmission xmlns="http://www.sec.gov/edgar/thirteenffiler" xmlns:com="http://www.sec.gov/edgar/common">
+  <schemaVersion>X0202</schemaVersion>
+  <headerData>
+    <submissionType>13F-HR</submissionType>
+    <filerInfo>
+      <liveTestFlag>LIVE</liveTestFlag>
+      <flags>
+        <confirmingCopyFlag>false</confirmingCopyFlag>
+        <returnCopyFlag>false</returnCopyFlag>
+        <overrideInternetFlag>false</overrideInternetFlag>
+      </flags>
+      <filer>
+        <credentials>
+          <cik>0001990467</cik>
+          <ccc>XXXXXXXX</ccc>
+        </credentials>
+      </filer>
+      <periodOfReport>06-30-2026</periodOfReport>
+    </filerInfo>
+  </headerData>
+  <formData>
+    <coverPage>
+      <reportCalendarOrQuarter>06-30-2026</reportCalendarOrQuarter>
+      <filingManager>
+        <name>Talon Private Wealth, LLC</name>
+        <address>
+          <com:street1>11974 COUNTY ROAD 101</com:street1>
+          <com:street2>SUITE 103</com:street2>
+          <com:city>THE VILLAGES</com:city>
+          <com:stateOrCountry>FL</com:stateOrCountry>
+          <com:zipCode>32162</com:zipCode>
+        </address>
+      </filingManager>
+      <reportType>13F COMBINATION REPORT</reportType>
+      <form13FFileNumber>028-25345</form13FFileNumber>
+      <provideInfoForInstruction5>N</provideInfoForInstruction5>
+    </coverPage>
+    <signatureBlock>
+      <name>LEILA SHAVER</name>
+      <title>CCO</title>
+      <phone>770-462-2118</phone>
+      <signature>LEILA SHAVER</signature>
+      <city>ALPHARETTA</city>
+      <stateOrCountry>GA</stateOrCountry>
+      <signatureDate>09-11-2026</signatureDate>
+    </signatureBlock>
+    <summaryPage>
+      <otherIncludedManagersCount>2</otherIncludedManagersCount>
+      <tableEntryTotal>405</tableEntryTotal>
+      <tableValueTotal>854907478</tableValueTotal>
+      <isConfidentialOmitted>false</isConfidentialOmitted>
+    </summaryPage>
+  </formData>
+</edgarSubmission>

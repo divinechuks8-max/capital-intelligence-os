@@ -51,6 +51,34 @@ def test_list_companies_and_point_in_time_events(session):
     assert after[0]["event_type"] == "INSIDER_PURCHASE"
 
 
+def test_institutions_and_holdings_endpoints(session):
+    from capint.adapters.sec_13f import SEC13FAdapter
+    from capint.ingestion.sec_13f import run_ingestion
+    from tests.fixtures.sec_13f import make_test_client as make_13f_test_client
+
+    adapter = SEC13FAdapter(
+        user_agent="Capital Intelligence OS tests test@example.com",
+        client=make_13f_test_client(),
+        min_request_interval=0,
+    )
+    run_ingestion(session, adapter, filing_count=10)
+
+    client = next(make_client(session))
+
+    institutions = client.get("/api/v1/institutions").json()
+    assert len(institutions) == 1
+    assert institutions[0]["canonical_name"] == "Talon Private Wealth, LLC"
+
+    holdings = client.get(
+        "/api/v1/holdings", params={"institution_entity_id": institutions[0]["entity_id"]}
+    ).json()
+    assert len(holdings) == 3
+    assert {h["position_status"] for h in holdings} == {"NEW"}
+    # publication_time and period_of_report must both be present and distinct fields.
+    assert holdings[0]["period_of_report"] == "2026-06-30"
+    assert "publication_time" in holdings[0]
+
+
 def test_insider_radar_endpoint_returns_explainable_entry(session):
     source = make_sec_source(session)
     company = make_company(session)

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from capint.models.entity import EntityType
 from capint.models.event import EventType
+from capint.models.institution import InstitutionalManagerType, InstitutionalPositionStatus
 from capint.scoring.insider_conviction import InsiderConvictionScore
 
 
@@ -33,6 +34,35 @@ class EventOut(BaseModel):
     publication_time: datetime
     confidence: float
     source_id: UUID
+
+
+class InstitutionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    entity_id: UUID
+    canonical_name: str
+    manager_type: InstitutionalManagerType
+    form13f_file_number: str | None = None
+
+
+class InstitutionalHoldingOut(BaseModel):
+    """Deliberately keeps `period_of_report` and `publication_time`
+    separate fields (never a single "date") — spec §13 requires every
+    institutional observation to show both "as of" and "filed on", since
+    13F reporting lag routinely runs 30-45 days."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: UUID
+    institution_entity_id: UUID
+    institution_name: str
+    company_entity_id: UUID
+    period_of_report: date
+    publication_time: datetime
+    shares_held: Decimal
+    market_value_usd: Decimal
+    shares_change: Decimal | None
+    position_status: InstitutionalPositionStatus
 
 
 class ScoreComponentOut(BaseModel):

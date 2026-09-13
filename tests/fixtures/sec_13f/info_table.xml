@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Trimmed to 5 of the real 405 <infoTable> entries from the same live filing
+(accession 0001990467-26-000004) as primary_doc.xml in this directory —
+kept verbatim, not fabricated. AMD and Alphabet Class A each appear twice
+under the same CUSIP (split across joint sub-filers), deliberately kept in
+to exercise the adapter's per-CUSIP aggregation.
+-->
+<informationTable xmlns="http://www.sec.gov/edgar/document/thirteenf/informationtable">
+  <infoTable>
+    <nameOfIssuer>ADVANCED MICRO DEVICES INC</nameOfIssuer>
+    <titleOfClass>COM</titleOfClass>
+    <cusip>007903107</cusip>
+    <value>427550</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>736</sshPrnamt>
+      <sshPrnamtType>SH</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>DFND</investmentDiscretion>
+    <otherManager>1</otherManager>
+    <votingAuthority>
+      <Sole>0</Sole>
+      <Shared>0</Shared>
+      <None>736</None>
+    </votingAuthority>
+  </infoTable>
+  <infoTable>
+    <nameOfIssuer>ADVANCED MICRO DEVICES INC</nameOfIssuer>
+    <titleOfClass>COM</titleOfClass>
+    <cusip>007903107</cusip>
+    <value>924809</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>1592</sshPrnamt>
+      <sshPrnamtType>SH</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>DFND</investmentDiscretion>
+    <otherManager>2</otherManager>
+    <votingAuthority>
+      <Sole>0</Sole>
+      <Shared>0</Shared>
+      <None>1592</None>
+    </votingAuthority>
+  </infoTable>
+  <infoTable>
+    <nameOfIssuer>AGNC INVT CORP</nameOfIssuer>
+    <titleOfClass>COM</titleOfClass>
+    <cusip>00123Q104</cusip>
+    <value>125471</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>11511</sshPrnamt>
+      <sshPrnamtType>SH</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>DFND</investmentDiscretion>
+    <otherManager>2</otherManager>
+    <votingAuthority>
+      <Sole>0</Sole>
+      <Shared>0</Shared>
+      <None>11511</None>
+    </votingAuthority>
+  </infoTable>
+  <infoTable>
+    <nameOfIssuer>ALPHABET INC</nameOfIssuer>
+    <titleOfClass>CAP STK CL A</titleOfClass>
+    <cusip>02079K305</cusip>
+    <value>356659</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>998</sshPrnamt>
+      <sshPrnamtType>SH</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>DFND</investmentDiscretion>
+    <otherManager>1</otherManager>
+    <votingAuthority>
+      <Sole>0</Sole>
+      <Shared>0</Shared>
+      <None>998</None>
+    </votingAuthority>
+  </infoTable>
+  <infoTable>
+    <nameOfIssuer>ALPHABET INC</nameOfIssuer>
+    <titleOfClass>CAP STK CL A</titleOfClass>
+    <cusip>02079K305</cusip>
+    <value>3369124</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>9428</sshPrnamt>
+      <sshPrnamtType>SH</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>DFND</investmentDiscretion>
+    <otherManager>2</otherManager>
+    <votingAuthority>
+      <Sole>0</Sole>
+      <Shared>0</Shared>
+      <None>9428</None>
+    </votingAuthority>
+  </infoTable>
+</informationTable>

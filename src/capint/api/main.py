@@ -6,11 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from capint import temporal
-from capint.api.schemas import CompanyOut, EventOut, InsiderRadarEntryOut
+from capint.api.schemas import CompanyOut, EventOut, InsiderRadarEntryOut, InstitutionalHoldingOut, InstitutionOut
 from capint.db import get_session
 from capint.models.company import Company
 from capint.models.entity import Entity
-from capint.models.event import EventType
+from capint.models.event import Event, EventType
+from capint.models.institution import InstitutionalHolding, InstitutionalManager
 from capint.radar.insider_radar import compute_insider_radar
 from capint.scoring.insider_conviction import DEFAULT_BASELINE_LOOKBACK_DAYS, DEFAULT_WINDOW_DAYS
 
@@ -73,6 +74,65 @@ def list_events(
     query_fn = temporal.as_of_public if mode == "public" else temporal.as_of_ingested
     events = query_fn(session, cutoff, entity_id=entity_id, event_types=event_types)
     return [EventOut.model_validate(e) for e in events]
+
+
+@app.get("/api/v1/institutions", response_model=list[InstitutionOut])
+def list_institutions(session: Session = Depends(get_session)) -> list[InstitutionOut]:
+    rows = session.execute(
+        select(InstitutionalManager, Entity).join(Entity, InstitutionalManager.entity_id == Entity.id)
+    ).all()
+    return [
+        InstitutionOut(
+            entity_id=manager.entity_id,
+            canonical_name=entity.canonical_name,
+            manager_type=manager.manager_type,
+            form13f_file_number=manager.form13f_file_number,
+        )
+        for manager, entity in rows
+    ]
+
+
+@app.get("/api/v1/holdings", response_model=list[InstitutionalHoldingOut])
+def list_institutional_holdings(
+    company_entity_id: UUID | None = None,
+    institution_entity_id: UUID | None = None,
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    session: Session = Depends(get_session),
+) -> list[InstitutionalHoldingOut]:
+    """Institutional (13F) positions, point-in-time by `as_of` against
+    Event.publication_time — i.e. what had actually been disclosed by then,
+    not what the position "is" (period_of_report can trail publication_time
+    by 30-45 days; both are returned separately so a caller can never
+    mistake one for the other — spec §13)."""
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    stmt = (
+        select(InstitutionalHolding, Event, Entity)
+        .join(Event, InstitutionalHolding.event_id == Event.id)
+        .join(Entity, InstitutionalHolding.institution_entity_id == Entity.id)
+        .where(Event.publication_time <= cutoff)
+    )
+    if company_entity_id is not None:
+        stmt = stmt.where(InstitutionalHolding.company_entity_id == company_entity_id)
+    if institution_entity_id is not None:
+        stmt = stmt.where(InstitutionalHolding.institution_entity_id == institution_entity_id)
+    stmt = stmt.order_by(Event.publication_time)
+
+    rows = session.execute(stmt).all()
+    return [
+        InstitutionalHoldingOut(
+            event_id=event.id,
+            institution_entity_id=holding.institution_entity_id,
+            institution_name=institution_entity.canonical_name,
+            company_entity_id=holding.company_entity_id,
+            period_of_report=holding.period_of_report,
+            publication_time=event.publication_time,
+            shares_held=holding.shares_held,
+            market_value_usd=holding.market_value_usd,
+            shares_change=holding.shares_change,
+            position_status=holding.position_status,
+        )
+        for holding, event, institution_entity in rows
+    ]
 
 
 @app.get("/api/v1/radar/insider", response_model=list[InsiderRadarEntryOut])
