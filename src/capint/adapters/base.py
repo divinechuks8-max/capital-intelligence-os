@@ -1,21 +1,26 @@
 """Source adapter abstraction (spec §61).
 
-Analytics/scoring code must depend only on this interface (and the Event
-model it produces), never on a specific provider's API shape — that keeps a
-vendor swap or a new jurisdiction's disclosure regime from rippling into the
-rest of the system.
+Analytics/scoring code must depend only on this interface, never on a
+specific provider's API shape — that keeps a vendor swap or a new
+jurisdiction's disclosure regime from rippling into the rest of the system.
 
-No adapter in this increment performs a live fetch. Wiring up a real
-provider means, at minimum, resolving its licensing terms (§62) and its
-rate limits — neither has been done yet for any source, so implementing a
-live call now would risk exactly the "fabricated data" failure mode the
-spec prohibits (§84).
+Phase 1 originally specified `fetch_events(...) -> list[Event]`. Building
+the first real adapter (Phase 2, SEC EDGAR Form 4) showed that constraint
+was wrong: constructing an `Event` row requires a resolved `primary_entity_id`
+and `source_id`, both of which only exist after DB-backed entity resolution
+(get-or-create by CIK, etc.) — work an adapter has no business doing, since
+it has no DB session and shouldn't need one to stay swappable/testable.
+
+So the adapter boundary now sits one layer lower: adapters fetch and parse,
+returning plain records; a separate ingestion module (capint.ingestion)
+does entity resolution and persistence against those records. See
+capint/ingestion/sec_form4.py for the reference split.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from datetime import datetime
-
-from capint.models.event import Event
+from typing import Any
 
 
 class SourceAdapter(ABC):
@@ -24,8 +29,12 @@ class SourceAdapter(ABC):
     source_name: str
 
     @abstractmethod
-    def fetch_events(self, since: datetime, until: datetime) -> list[Event]:
-        """Return newly available Event rows (not yet persisted) published
-        in [since, until]. Implementations own their own pagination, rate
-        limiting, and retry policy."""
+    def fetch_records(self, since: datetime, until: datetime) -> Iterable[dict[str, Any]]:
+        """Yield normalized raw records published in [since, until].
+
+        Records are plain dicts (not ORM rows) so adapters stay decoupled
+        from the database — turning a record into Entity/Event/... rows is
+        the ingestion pipeline's job. Implementations own their own
+        pagination, rate limiting, and retry policy.
+        """
         raise NotImplementedError

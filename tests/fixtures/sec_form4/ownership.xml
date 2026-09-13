@@ -1,0 +1,90 @@
+<?xml version="1.0"?>
+<ownershipDocument>
+
+    <schemaVersion>X0609</schemaVersion>
+
+    <documentType>4</documentType>
+
+    <periodOfReport>2026-09-10</periodOfReport>
+
+    <notSubjectToSection16>false</notSubjectToSection16>
+
+    <issuer>
+        <issuerCik>0001824920</issuerCik>
+        <issuerName>IonQ, Inc.</issuerName>
+        <issuerTradingSymbol>IONQ</issuerTradingSymbol>
+        <issuerForeignTradingSymbol></issuerForeignTradingSymbol>
+    </issuer>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0002058452</rptOwnerCik>
+            <rptOwnerName>Raymond John w</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerNonUSAddressFlag>false</rptOwnerNonUSAddressFlag>
+            <rptOwnerStreet1>C/O IONQ, INC.</rptOwnerStreet1>
+            <rptOwnerStreet2>4505 CAMPUS DRIVE</rptOwnerStreet2>
+            <rptOwnerCity>COLLEGE PARK</rptOwnerCity>
+            <rptOwnerState>MD</rptOwnerState>
+            <rptOwnerZipCode>20740</rptOwnerZipCode>
+            <rptOwnerStateDescription></rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>true</isDirector>
+            <isOfficer>false</isOfficer>
+            <isTenPercentOwner>false</isTenPercentOwner>
+            <isOther>true</isOther>
+            <otherText>Special Advisor</otherText>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <aff10b5One>true</aff10b5One>
+
+    <nonDerivativeTable>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>Common Stock</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2026-09-10</value>
+            </transactionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>S</transactionCode>
+                <equitySwapInvolved>false</equitySwapInvolved>
+                <footnoteId id="F1"/>
+            </transactionCoding>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>2407</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>37.21</value>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>D</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>77741</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>D</value>
+                </directOrIndirectOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+    </nonDerivativeTable>
+
+    <footnotes>
+        <footnote id="F1">The transactions reported on this Form 4 were effected pursuant to a Rule 10b5-1 trading plan adopted by the reporting person on March 19, 2026.</footnote>
+    </footnotes>
+
+    <ownerSignature>
+        <signatureName>/s/ Tyler T. Rosenbaum, Assistant Secretary, by Power of Attorney</signatureName>
+        <signatureDate>2026-09-11</signatureDate>
+    </ownerSignature>
+</ownershipDocument>

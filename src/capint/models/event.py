@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, Float, ForeignKey, String, Text
+from sqlalchemy import CheckConstraint, DateTime, Enum, Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from capint.models.base import Base, CreatedAtMixin, UUIDPKMixin
@@ -75,7 +75,9 @@ class Event(UUIDPKMixin, CreatedAtMixin, Base):
     document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id"), nullable=True)
 
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
-    raw_data_reference: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Doubles as an adapter-defined idempotency key (e.g. "sec-form4:<accession>#<index>")
+    # so re-running ingestion never double-counts the same source transaction.
+    raw_data_reference: Mapped[str | None] = mapped_column(String(512), unique=True, nullable=True)
 
     source: Mapped["Source"] = relationship()  # noqa: F821
     document: Mapped["Document | None"] = relationship()  # noqa: F821
