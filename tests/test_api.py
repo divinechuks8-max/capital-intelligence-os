@@ -215,6 +215,51 @@ def test_uk_psc_endpoint(session):
     assert len(filtered) == 4
 
 
+def test_crypto_treasury_endpoint(session):
+    from capint.adapters.blockchain_info import BlockchainInfoAdapter
+    from capint.ingestion.blockchain_info import run_ingestion as run_crypto_ingestion
+    from tests.fixtures.blockchain_info import KNOWN_ADDRESS, make_test_client as make_btc_test_client
+
+    adapter = BlockchainInfoAdapter(client=make_btc_test_client(), min_request_interval=0)
+    run_crypto_ingestion(session, adapter, [KNOWN_ADDRESS], limit=3)
+
+    client = next(make_client(session))
+
+    movements = client.get("/api/v1/crypto-treasury").json()
+    assert len(movements) == 3
+    assert all(m["chain"] == "bitcoin" for m in movements)
+    assert all(m["address"] == KNOWN_ADDRESS for m in movements)
+
+    filtered = client.get("/api/v1/crypto-treasury", params={"address": KNOWN_ADDRESS}).json()
+    assert len(filtered) == 3
+
+    none_filtered = client.get("/api/v1/crypto-treasury", params={"address": "1SomeOtherAddress"}).json()
+    assert none_filtered == []
+
+
+def test_guidance_disclosures_endpoint(session):
+    from capint.adapters.sec_guidance import SECGuidanceDisclosureAdapter
+    from capint.ingestion.sec_guidance import run_ingestion as run_guidance_ingestion
+    from tests.fixtures.sec_guidance import KNOWN_CIK, make_test_client as make_guidance_test_client
+
+    adapter = SECGuidanceDisclosureAdapter(
+        user_agent="Capital Intelligence OS tests test@example.com",
+        client=make_guidance_test_client(),
+        min_request_interval=0,
+    )
+    run_guidance_ingestion(session, adapter, [KNOWN_CIK], filing_count=20)
+
+    client = next(make_client(session))
+
+    disclosures = client.get("/api/v1/guidance-disclosures").json()
+    assert len(disclosures) == 2
+    assert all(d["item_codes"] == "2.02,9.01" for d in disclosures)
+
+    company_entity_id = disclosures[0]["company_entity_id"]
+    filtered = client.get("/api/v1/guidance-disclosures", params={"company_entity_id": company_entity_id}).json()
+    assert len(filtered) == 2
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

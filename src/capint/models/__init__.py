@@ -1,10 +1,12 @@
 from capint.models.base import Base
 from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
+from capint.models.crypto import CryptoTreasuryMovement
 from capint.models.entity import Entity, EntityIdentifier, EntityType, IdentifierType
 from capint.models.event import Event, EventType
 from capint.models.fund import Fund, FundAumSnapshot
 from capint.models.fundamentals import FundamentalPeriodType, FundamentalReport
+from capint.models.guidance import GuidanceDisclosure
 from capint.models.insider import InsiderTransaction, InsiderTransactionType
 from capint.models.institution import (
     InstitutionalHolding,
@@ -23,6 +25,7 @@ __all__ = [
     "BeneficialOwnershipDisclosure",
     "CapitalAllocationFact",
     "Company",
+    "CryptoTreasuryMovement",
     "Document",
     "Entity",
     "EntityIdentifier",
@@ -33,6 +36,7 @@ __all__ = [
     "FundAumSnapshot",
     "FundamentalPeriodType",
     "FundamentalReport",
+    "GuidanceDisclosure",
     "IdentifierType",
     "InsiderTransaction",
     "InsiderTransactionType",

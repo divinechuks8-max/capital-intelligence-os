@@ -11,10 +11,12 @@ from capint.api.schemas import (
     CapitalAllocationFactOut,
     CompanyOut,
     ConvergenceEntryOut,
+    CryptoTreasuryMovementOut,
     EventOut,
     FundAumSnapshotOut,
     FundamentalReportOut,
     FundOut,
+    GuidanceDisclosureOut,
     InsiderRadarEntryOut,
     InstitutionalHoldingOut,
     InstitutionalRadarEntryOut,
@@ -26,10 +28,12 @@ from capint.convergence.engine import compute_convergence
 from capint.db import get_session
 from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
+from capint.models.crypto import CryptoTreasuryMovement
 from capint.models.entity import Entity
 from capint.models.event import Event, EventType
 from capint.models.fund import Fund, FundAumSnapshot
 from capint.models.fundamentals import FundamentalReport
+from capint.models.guidance import GuidanceDisclosure
 from capint.models.institution import InstitutionalHolding, InstitutionalManager
 from capint.models.ownership import BeneficialOwnershipDisclosure
 from capint.models.short_interest import ShortInterestSnapshot
@@ -442,6 +446,83 @@ def list_uk_psc_records(
             publication_time=event.publication_time,
         )
         for psc, event in rows
+    ]
+
+
+@app.get("/api/v1/crypto-treasury", response_model=list[CryptoTreasuryMovementOut])
+def list_crypto_treasury_movements(
+    wallet_entity_id: UUID | None = None,
+    address: str | None = None,
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    session: Session = Depends(get_session),
+) -> list[CryptoTreasuryMovementOut]:
+    """On-chain Bitcoin wallet activity for explicitly-tracked addresses
+    (Phase 12, crypto extension), point-in-time by `as_of` against
+    Event.publication_time (the transaction's own on-chain timestamp — no
+    disclosure lag, unlike every SEC-sourced endpoint here). See
+    capint.models.crypto's module docstring for why no wallet-owner
+    attribution is exposed."""
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    stmt = (
+        select(CryptoTreasuryMovement, Event)
+        .join(Event, CryptoTreasuryMovement.event_id == Event.id)
+        .where(Event.publication_time <= cutoff)
+    )
+    if wallet_entity_id is not None:
+        stmt = stmt.where(CryptoTreasuryMovement.wallet_entity_id == wallet_entity_id)
+    if address is not None:
+        stmt = stmt.where(CryptoTreasuryMovement.address == address)
+    stmt = stmt.order_by(Event.publication_time.desc())
+
+    rows = session.execute(stmt).all()
+    return [
+        CryptoTreasuryMovementOut(
+            event_id=event.id,
+            wallet_entity_id=movement.wallet_entity_id,
+            chain=movement.chain,
+            address=movement.address,
+            tx_hash=movement.tx_hash,
+            net_amount=movement.net_amount,
+            block_height=movement.block_height,
+            publication_time=event.publication_time,
+        )
+        for movement, event in rows
+    ]
+
+
+@app.get("/api/v1/guidance-disclosures", response_model=list[GuidanceDisclosureOut])
+def list_guidance_disclosures(
+    company_entity_id: UUID | None = None,
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    session: Session = Depends(get_session),
+) -> list[GuidanceDisclosureOut]:
+    """Guidance-relevant 8-K disclosures (Phase 12), point-in-time by
+    `as_of` against Event.publication_time (the 8-K's SEC acceptance
+    time). See capint.models.guidance's module docstring for why
+    `item_codes` is a raw, unparsed observation, not an extracted
+    guidance direction/magnitude."""
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    stmt = (
+        select(GuidanceDisclosure, Event)
+        .join(Event, GuidanceDisclosure.event_id == Event.id)
+        .where(Event.publication_time <= cutoff)
+    )
+    if company_entity_id is not None:
+        stmt = stmt.where(GuidanceDisclosure.company_entity_id == company_entity_id)
+    stmt = stmt.order_by(Event.publication_time.desc())
+
+    rows = session.execute(stmt).all()
+    return [
+        GuidanceDisclosureOut(
+            event_id=event.id,
+            company_entity_id=disclosure.company_entity_id,
+            item_codes=disclosure.item_codes,
+            filing_form_type=disclosure.filing_form_type,
+            filing_accession=disclosure.filing_accession,
+            primary_document_url=disclosure.primary_document_url,
+            publication_time=event.publication_time,
+        )
+        for disclosure, event in rows
     ]
 
 

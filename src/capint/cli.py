@@ -7,6 +7,8 @@
     python -m capint.cli ingest-nport --cik 0000884394
     python -m capint.cli ingest-short-interest --ticker AAPL
     python -m capint.cli ingest-uk-psc --company-number 05151321
+    python -m capint.cli ingest-crypto-treasury --address 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+    python -m capint.cli ingest-guidance --cik 0000320193
 """
 
 import argparse
@@ -15,20 +17,24 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
+from capint.adapters.blockchain_info import BlockchainInfoAdapter
 from capint.adapters.companies_house import CompaniesHouseAdapter
 from capint.adapters.finra_short_interest import FINRAShortInterestAdapter
 from capint.adapters.sec_13dg import SEC13DGAdapter
 from capint.adapters.sec_13f import SEC13FAdapter
 from capint.adapters.sec_edgar import SECEdgarForm4Adapter
+from capint.adapters.sec_guidance import SECGuidanceDisclosureAdapter
 from capint.adapters.sec_nport import SECNPortAdapter
 from capint.adapters.sec_xbrl import SECXBRLFactsAdapter
 from capint.config import settings
 from capint.db import SessionLocal
+from capint.ingestion.blockchain_info import run_ingestion as run_crypto_treasury_ingestion
 from capint.ingestion.companies_house import run_ingestion as run_uk_psc_ingestion
 from capint.ingestion.finra_short_interest import run_ingestion as run_short_interest_ingestion
 from capint.ingestion.sec_13dg import run_ingestion as run_13dg_ingestion
 from capint.ingestion.sec_13f import run_ingestion as run_13f_ingestion
 from capint.ingestion.sec_form4 import run_ingestion as run_form4_ingestion
+from capint.ingestion.sec_guidance import run_ingestion as run_guidance_ingestion
 from capint.ingestion.sec_nport import run_ingestion as run_nport_ingestion
 from capint.ingestion.sec_xbrl import run_ingestion as run_xbrl_ingestion
 from capint.models.company import Company
@@ -247,6 +253,61 @@ def ingest_uk_psc(company_numbers: list[str]) -> int:
     return 0
 
 
+def ingest_crypto_treasury(addresses: list[str], limit: int) -> int:
+    """Ingests on-chain Bitcoin wallet activity for explicitly-provided
+    addresses (Phase 12, crypto extension). No API key needed —
+    blockchain.info is free and unauthenticated. No --from-tracked: this
+    system has no mechanism linking a wallet address to any company/person
+    it already tracks (see capint.models.crypto's module docstring for why
+    no such attribution is attempted here) — explicit --address is
+    required."""
+    if not addresses:
+        print(
+            "No addresses to process — pass --address one or more times "
+            "(e.g. --address 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa).",
+            file=sys.stderr,
+        )
+        return 1
+
+    adapter = BlockchainInfoAdapter()
+    with SessionLocal() as session:
+        summary = run_crypto_treasury_ingestion(session, adapter, addresses, limit=limit)
+
+    print(f"wallets seen:                {summary.wallets_seen}")
+    print(f"wallets with no activity:    {summary.wallets_with_no_activity}")
+    print(f"movements created:           {summary.movements_created}")
+    print(f"movements skipped (dup):     {summary.movements_skipped_duplicate}")
+    print(f"wallet errors:               {len(summary.wallet_errors)}")
+    for err in summary.wallet_errors:
+        print(f"  - {err}")
+    return 0
+
+
+def ingest_guidance(ciks: list[str], filing_count: int) -> int:
+    """Ingests guidance-relevant 8-K disclosures (Items 2.02/7.01) for
+    explicitly-provided companies (Phase 12). No structured guidance
+    extraction is attempted — see capint.models.guidance's module
+    docstring for why this is an honest observation-only scope."""
+    if not _require_user_agent():
+        return 1
+    if not ciks:
+        print("No CIKs to process — pass --cik one or more times (e.g. --cik 0000320193 for Apple).", file=sys.stderr)
+        return 1
+
+    adapter = SECGuidanceDisclosureAdapter(user_agent=settings.sec_edgar_user_agent)
+    with SessionLocal() as session:
+        summary = run_guidance_ingestion(session, adapter, ciks, filing_count=filing_count)
+
+    print(f"companies seen:                  {summary.companies_seen}")
+    print(f"companies with no disclosures:   {summary.companies_with_no_disclosures}")
+    print(f"disclosures created:             {summary.disclosures_created}")
+    print(f"disclosures skipped (dup):       {summary.disclosures_skipped_duplicate}")
+    print(f"company errors:                  {len(summary.company_errors)}")
+    for err in summary.company_errors:
+        print(f"  - {err}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="capint")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -289,6 +350,18 @@ def main() -> int:
         "--company-number", action="append", default=[], help="Companies House number (repeatable)"
     )
 
+    crypto_parser = subparsers.add_parser(
+        "ingest-crypto-treasury", help="Ingest on-chain Bitcoin wallet activity for tracked addresses"
+    )
+    crypto_parser.add_argument("--address", action="append", default=[], help="Bitcoin address (repeatable)")
+    crypto_parser.add_argument("--limit", type=int, default=50, help="Max recent transactions per address")
+
+    guidance_parser = subparsers.add_parser(
+        "ingest-guidance", help="Ingest guidance-relevant 8-K disclosures (Items 2.02/7.01)"
+    )
+    guidance_parser.add_argument("--cik", action="append", default=[], help="Company CIK (repeatable)")
+    guidance_parser.add_argument("--filing-count", type=int, default=20, help="Max recent 8-K filings to scan per company")
+
     args = parser.parse_args()
     if args.command == "ingest-form4":
         return ingest_form4(args.count)
@@ -304,6 +377,10 @@ def main() -> int:
         return ingest_short_interest(args.ticker, args.num_cycles)
     if args.command == "ingest-uk-psc":
         return ingest_uk_psc(args.company_number)
+    if args.command == "ingest-crypto-treasury":
+        return ingest_crypto_treasury(args.address, args.limit)
+    if args.command == "ingest-guidance":
+        return ingest_guidance(args.cik, args.filing_count)
     return 1
 
 

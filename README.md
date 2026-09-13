@@ -208,6 +208,49 @@ against Frontier Developments plc and Angling Direct plc (both AIM),
 which do have real PSC records, including individual and corporate PSCs
 and both active and historical (ceased) ones.
 
+## Ingest real on-chain Bitcoin wallet activity
+
+No API key needed — blockchain.info is free and unauthenticated:
+
+```bash
+python -m capint.cli ingest-crypto-treasury --address 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa --limit 50
+```
+
+Per-address (`--address`, repeatable — no `--from-tracked`; this system
+has no mechanism linking a wallet address to a company/person it already
+tracks). Tracks each transaction's net effect on one explicitly-provided
+Bitcoin address's balance. **Deliberately narrow scope, and no wallet-
+owner attribution is stored or claimed**: the wallet entity's name is
+simply its raw address. This does not attempt "whale accumulation" or
+"exchange flow" detection (`EventType` also declares
+`WHALE_ACCUMULATION`/`EXCHANGE_FLOW`/`TOKEN_UNLOCK`) — those need a
+labeled address database (which addresses belong to which exchange, fund,
+or whale) with no free, legal source found during research; the realistic
+providers (Nansen, Arkham, Chainalysis) are paid/licensed. Ethereum/
+ERC-20 support would need its own free Etherscan API key (confirmed live:
+unlike blockchain.info, Etherscan's v2 API requires one) — not registered
+in this phase.
+
+## Ingest real SEC guidance-relevant 8-K disclosures
+
+Also requires `SEC_EDGAR_USER_AGENT`:
+
+```bash
+python -m capint.cli ingest-guidance --cik 0000320193 --filing-count 20
+```
+
+Per-company (`--cik`, repeatable). Flags 8-K filings tagged with Item
+2.02 ("Results of Operations and Financial Condition" — routine quarterly
+earnings, sometimes containing new guidance) or Item 7.01 ("Regulation FD
+Disclosure" — the more common vehicle for a standalone guidance
+announcement), confirmed live via `data.sec.gov/submissions`'s own
+per-filing `items` field — no full-text search or document parsing
+needed. **Deliberately does not parse the press-release exhibit or
+extract any guidance direction/magnitude** — it stores which item(s) were
+disclosed and a link to the filing, an OBSERVATION that a guidance-
+relevant disclosure happened, not this system's INTERPRETATION of what it
+says. A human (or a future NLP-based phase) has to read the filing.
+
 ## Insider Radar
 
 ```
@@ -702,3 +745,70 @@ servers being reachable.
   duplicates); an unknown company number handled as a per-company error
   without aborting the batch; served correctly through `/api/v1/uk-psc`
   over HTTP.
+
+## Known limitations (Phase 12)
+
+Phase 12 covers two independent extensions (crypto on-chain tracking and
+analyst/guidance signals) rather than one topic — each is scoped and
+documented separately below.
+
+**Crypto (on-chain Bitcoin wallet tracking):**
+
+- **No "whale accumulation" or "exchange flow" detection, despite
+  `EventType` declaring both.** Both need a labeled address database
+  (which addresses belong to which exchange, fund, or whale) — no free,
+  legal source was found during research; the realistic providers
+  (Nansen, Arkham, Chainalysis) are paid/licensed. Guessing a label from
+  heuristics alone would be exactly the kind of unverified attribution
+  this project's spec prohibits.
+- **No wallet-owner attribution at all** — not even for the "treasury"
+  framing in this event type's name. A wallet entity's `canonical_name`
+  is simply its raw address; this system never claims a specific
+  company/fund/person owns any address it tracks.
+- **Bitcoin only.** Ethereum/ERC-20 support would be a natural next
+  increment, but Etherscan's v2 API requires a free API key (confirmed
+  live: it rejects unauthenticated requests, unlike blockchain.info) —
+  not registered in this phase.
+- **No running balance field.** Computing a genuine `balance_after` needs
+  either an address's complete transaction history or chaining from a
+  previously ingested transaction; this adapter only fetches a bounded
+  recent window (`--limit`), so a sometimes-null derived balance was
+  deliberately left out rather than half-implemented.
+- **A real edge case confirmed live**: `rawaddr` can return an
+  unconfirmed (mempool) transaction with `block_height: null` — still a
+  real, broadcast, publicly visible transaction, just not yet in a block,
+  and treated as a valid observation. Such a transaction could
+  theoretically be dropped if never confirmed — a minor limitation of
+  on-chain data recency, not specific to this adapter.
+- Validated against real, live blockchain.info data end to end: the
+  Bitcoin genesis block address's 10 most recent transactions ingested
+  correctly (including both confirmed and unconfirmed ones), net amounts
+  matching hand-computed values from the raw UTXO data; idempotent
+  re-ingestion confirmed; served correctly through
+  `/api/v1/crypto-treasury` over HTTP.
+
+**Analyst/guidance signals:**
+
+- **No analyst estimates or rating changes were built, despite
+  `EventType` declaring `ANALYST_RATING_CHANGE`/`ESTIMATE_REVISION`.**
+  Real analyst estimates and ratings are third-party research products
+  (IBES/Refinitiv, Zacks, Visible Alpha, ...) — every free-tier option
+  checked during research (e.g. Finnhub) requires an API key at minimum,
+  and comprehensive historical estimate data is a paid/licensed product
+  industry-wide. This is a real content gap, the same conclusion reached
+  for UK PDMR/RNS data in Phase 11 — not something a different
+  implementation approach could close with free data.
+- **No guidance direction, magnitude, or numeric range is extracted.**
+  This phase flags WHICH 8-Ks were filed under Item 2.02 or 7.01 and
+  links to them — it does not fetch or parse the press-release exhibit.
+  Item 2.02 in particular is used for routine quarterly earnings far more
+  often than for a standalone guidance update, so a `GuidanceDisclosure`
+  row here means "a disclosure in this category happened," not "guidance
+  changed."
+- **No scoring/radar yet** — ingestion only, per the same ingest-now/
+  score-later split as every prior signal-producing phase.
+- Validated against real, live SEC EDGAR data end to end: Apple Inc.'s 30
+  most recent Item 2.02 8-Ks ingested correctly, matching its real
+  quarterly earnings cadence (accession numbers and dates cross-checked
+  against SEC EDGAR directly); idempotent re-ingestion confirmed; served
+  correctly through `/api/v1/guidance-disclosures` over HTTP.

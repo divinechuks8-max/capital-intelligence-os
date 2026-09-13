@@ -149,6 +149,39 @@ class UKPersonWithSignificantControlOut(BaseModel):
     publication_time: datetime
 
 
+class CryptoTreasuryMovementOut(BaseModel):
+    """No wallet-owner attribution field exists here — see
+    capint.models.crypto.CryptoTreasuryMovement's docstring for why. The
+    wallet entity's name is simply its raw address."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: UUID
+    wallet_entity_id: UUID
+    chain: str
+    address: str
+    tx_hash: str
+    net_amount: Decimal
+    block_height: int | None
+    publication_time: datetime
+
+
+class GuidanceDisclosureOut(BaseModel):
+    """`item_codes` is SEC's own raw item-number string, passed through
+    verbatim — see capint.models.guidance.GuidanceDisclosure's docstring
+    for why no guidance direction/magnitude is extracted or claimed here."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: UUID
+    company_entity_id: UUID
+    item_codes: str
+    filing_form_type: str
+    filing_accession: str
+    primary_document_url: str | None
+    publication_time: datetime
+
+
 class CompanyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
