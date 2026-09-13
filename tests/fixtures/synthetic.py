@@ -68,7 +68,8 @@ def make_insider_purchase_event(
     publication_time: datetime,
     retrieved_at: datetime | None = None,
     shares: str = "10000",
-    price: str = "12.50",
+    price: str | None = "12.50",
+    is_10b5_1_plan: bool = False,
 ) -> Event:
     """Builds a full Event + Document + InsiderTransaction chain, mirroring
     what a real Form 4 ingestion would produce (minus the actual parsing)."""
@@ -100,7 +101,8 @@ def make_insider_purchase_event(
         company_entity_id=company.entity_id,
         transaction_type=InsiderTransactionType.OPEN_MARKET_PURCHASE,
         shares_transacted=Decimal(shares),
-        price_per_share=Decimal(price),
+        price_per_share=Decimal(price) if price is not None else None,
+        is_10b5_1_plan=is_10b5_1_plan,
         filing_form_type="Form 4",
     )
     session.add(txn)

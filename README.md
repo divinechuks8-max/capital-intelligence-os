@@ -47,6 +47,20 @@ Entity rows by CIK, and persists Event/InsiderTransaction rows. Safe to
 re-run — already-ingested transactions are skipped by their
 `(accession number, transaction index)` idempotency key.
 
+## Insider Radar
+
+```
+GET /api/v1/radar/insider?window_days=90&baseline_lookback_days=730&top_n=25&as_of=2026-06-01T00:00:00Z
+```
+
+Ranks companies by discretionary open-market insider-buying conviction over
+the trailing `window_days`, as of `as_of` (defaults to now). Every entry
+carries its four score components (size-vs-own-history, breadth,
+persistence, discretion) each with a plain-English explanation, plus the
+underlying transaction evidence — there is no bare number without a "why"
+(spec §69). See `src/capint/scoring/insider_conviction.py`'s module
+docstring for exactly what "conviction" means and doesn't mean here.
+
 ## Test
 
 ```bash
@@ -73,6 +87,13 @@ reachable.
   resolution (get-or-create by external identifier) and idempotent
   persistence. `sec_form4.py` is the reference implementation.
 - `src/capint/cli.py` — `python -m capint.cli ingest-form4` operational entry point.
+- `src/capint/scoring/insider_conviction.py` — insider-conviction scoring:
+  discretionary-purchase filtering, historical-anomaly comparison
+  (median/MAD over trailing windows, honest about insufficient history),
+  and named, explained score components. Computed on demand — no
+  `signals` table yet (see Known limitations).
+- `src/capint/radar/insider_radar.py` — finds candidate companies and ranks
+  them by conviction score.
 - `src/capint/api/` — FastAPI app, versioned under `/api/v1`.
 - `migrations/` — Alembic migrations.
 - `tests/fixtures/synthetic.py` — synthetic-only fixture builders for the
@@ -94,3 +115,28 @@ reachable.
   files and is a separate adapter method.
 - No amendment (`4/A`) vs. original tracking — an amendment is ingested as
   its own transaction rather than reconciled against the filing it restates.
+
+## Known limitations (Phase 3)
+
+- Because Phase 2 only ingests EDGAR's "current filings" feed (no
+  historical backfill), every real company's trailing-window baseline is
+  currently thin-to-empty. The scoring engine is honest about this (see
+  `confidence_notes` / a `None` `size_vs_history` component below the
+  minimum bucket count) rather than presenting a false-precision anomaly
+  score — but in practice, real radar entries today will mostly show
+  "not enough history" until a backfill adapter exists.
+- Conviction-score component weights (0.35/0.30/0.15/0.20) are a
+  documented starting heuristic, not fit to realized outcomes — spec §48
+  ("who is right?") is the later phase that would validate or revise them.
+- Officer/director/10%-owner role is read from the *current*
+  `PersonCompanyRole` row, not a point-in-time snapshot as of the
+  transaction — a person who left the board since would still show their
+  latest known role.
+- Scores are computed on demand, not persisted to a `signals` table —
+  there's no history of how a company's score changed over time yet
+  (needed for the later Historical Analog Engine).
+- Only insider *buying* is scored (per the MVP definition, spec §82).
+  Insider selling deliberately has no symmetric "bearish" score yet — spec
+  §84 warns against treating selling as automatically bearish, and building
+  that fairly needs its own reasoning (tax-driven sales, diversification,
+  10b5-1 plans, etc.), not a mirrored version of this module.

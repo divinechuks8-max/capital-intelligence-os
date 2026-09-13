@@ -49,3 +49,34 @@ def test_list_companies_and_point_in_time_events(session):
     ).json()
     assert len(after) == 1
     assert after[0]["event_type"] == "INSIDER_PURCHASE"
+
+
+def test_insider_radar_endpoint_returns_explainable_entry(session):
+    source = make_sec_source(session)
+    company = make_company(session)
+    person = make_person(session)
+    make_insider_purchase_event(
+        session,
+        company=company,
+        person=person,
+        source=source,
+        event_time=dt(2026, 5, 20),
+        publication_time=dt(2026, 5, 20),
+        shares="1000",
+        price="10.00",
+    )
+    session.commit()
+
+    client = next(make_client(session))
+    resp = client.get(
+        "/api/v1/radar/insider", params={"as_of": "2026-06-01T00:00:00Z", "window_days": 30}
+    )
+    assert resp.status_code == 200
+    entries = resp.json()
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["company_entity_id"] == str(company.entity_id)
+    assert entry["composite_score"] is not None
+    assert len(entry["components"]) == 4
+    assert len(entry["evidence"]) == 1
+    assert len(entry["explanation"]) >= 1

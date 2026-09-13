@@ -6,11 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from capint import temporal
-from capint.api.schemas import CompanyOut, EventOut
+from capint.api.schemas import CompanyOut, EventOut, InsiderRadarEntryOut
 from capint.db import get_session
 from capint.models.company import Company
 from capint.models.entity import Entity
 from capint.models.event import EventType
+from capint.radar.insider_radar import compute_insider_radar
+from capint.scoring.insider_conviction import DEFAULT_BASELINE_LOOKBACK_DAYS, DEFAULT_WINDOW_DAYS
 
 app = FastAPI(title="Capital Intelligence OS", version="0.1.0")
 
@@ -71,6 +73,31 @@ def list_events(
     query_fn = temporal.as_of_public if mode == "public" else temporal.as_of_ingested
     events = query_fn(session, cutoff, entity_id=entity_id, event_types=event_types)
     return [EventOut.model_validate(e) for e in events]
+
+
+@app.get("/api/v1/radar/insider", response_model=list[InsiderRadarEntryOut])
+def insider_radar(
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    window_days: int = Query(default=DEFAULT_WINDOW_DAYS, ge=1, le=3650),
+    baseline_lookback_days: int = Query(default=DEFAULT_BASELINE_LOOKBACK_DAYS, ge=1, le=36500),
+    top_n: int = Query(default=25, ge=1, le=500),
+    session: Session = Depends(get_session),
+) -> list[InsiderRadarEntryOut]:
+    """Companies with the strongest discretionary open-market insider
+    buying in the trailing `window_days`, ranked by conviction score.
+    Every entry carries its score components and evidence — see
+    capint.scoring.insider_conviction for what "conviction" means here and
+    why (spec §69: a radar result must always answer "why is this here?").
+    """
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    scores = compute_insider_radar(
+        session,
+        as_of=cutoff,
+        window_days=window_days,
+        baseline_lookback_days=baseline_lookback_days,
+        top_n=top_n,
+    )
+    return [InsiderRadarEntryOut.from_score(s) for s in scores]
 
 
 @app.get("/health")
