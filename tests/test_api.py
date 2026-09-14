@@ -303,6 +303,36 @@ def test_alert_rules_and_alerts_endpoints(session):
     assert none_filtered.json() == []
 
 
+def test_backtest_short_interest_endpoint(session):
+    from tests.fixtures.synthetic import make_price_bar, make_price_source, make_short_interest_snapshot_event
+
+    sec_source = make_sec_source(session)
+    price_source = make_price_source(session)
+    company = make_company(session)
+
+    make_short_interest_snapshot_event(
+        session, company=company, source=sec_source, ticker="TEST",
+        settlement_date=dt(2026, 5, 1).date(), publication_time=dt(2026, 5, 2),
+        current_short_position="1100000", previous_short_position="1000000",
+        change_percent="10.00", days_to_cover="2.00",
+    )
+    make_price_bar(session, company=company, source=price_source, ticker="TEST", trade_date=dt(2026, 5, 1).date(), close="100.00")
+    make_price_bar(session, company=company, source=price_source, ticker="TEST", trade_date=dt(2026, 5, 4).date(), close="120.00")
+    session.commit()
+
+    client = next(make_client(session))
+    resp = client.get(
+        "/api/v1/backtest/short-interest",
+        params={"as_of": "2026-06-01T00:00:00Z", "holding_trading_days": 1},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["signal_count"] == 1
+    assert data["computable_count"] == 1
+    assert data["mean_forward_return_pct"] == 20
+    assert data["results"][0]["forward_return_pct"] == 20
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

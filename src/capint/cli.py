@@ -11,14 +11,17 @@
     python -m capint.cli ingest-guidance --cik 0000320193
     python -m capint.cli create-alert-rule --name "High insider conviction" --rule-type INSIDER_CONVICTION_THRESHOLD --min-score 75
     python -m capint.cli evaluate-alerts
+    python -m capint.cli ingest-prices --ticker AAPL
+    python -m capint.cli backtest-short-interest
 """
 
 import argparse
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 
+from capint.adapters.alpha_vantage import AlphaVantageAdapter
 from capint.adapters.blockchain_info import BlockchainInfoAdapter
 from capint.adapters.companies_house import CompaniesHouseAdapter
 from capint.adapters.finra_short_interest import FINRAShortInterestAdapter
@@ -30,8 +33,10 @@ from capint.adapters.sec_nport import SECNPortAdapter
 from capint.adapters.sec_xbrl import SECXBRLFactsAdapter
 from capint.alerting.engine import evaluate_all_active_rules
 from capint.alerting.rules import create_or_update_alert_rule
+from capint.backtesting.engine import DEFAULT_HOLDING_TRADING_DAYS, backtest_rising_short_interest_cycles
 from capint.config import settings
 from capint.db import SessionLocal
+from capint.ingestion.alpha_vantage import run_ingestion as run_price_ingestion
 from capint.ingestion.blockchain_info import run_ingestion as run_crypto_treasury_ingestion
 from capint.ingestion.companies_house import run_ingestion as run_uk_psc_ingestion
 from capint.ingestion.finra_short_interest import run_ingestion as run_short_interest_ingestion
@@ -62,6 +67,17 @@ def _require_companies_house_api_key() -> bool:
         print(
             "COMPANIES_HOUSE_API_KEY is not set (see .env.example) — refusing to send "
             "unauthenticated requests to Companies House.",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def _require_alpha_vantage_api_key() -> bool:
+    if not settings.alpha_vantage_api_key:
+        print(
+            "ALPHA_VANTAGE_API_KEY is not set (see .env.example) — refusing to send "
+            "unauthenticated requests to Alpha Vantage.",
             file=sys.stderr,
         )
         return False
@@ -358,6 +374,58 @@ def evaluate_alerts() -> int:
     return 0
 
 
+def ingest_prices(tickers: list[str]) -> int:
+    """Ingests daily OHLCV price bars for explicitly-provided tickers
+    (Phase 13, backtesting extension). Free-tier limitation: only the
+    trailing ~100 trading days are available (`outputsize=full`, complete
+    history, is premium-only on Alpha Vantage — confirmed live). No
+    --from-tracked: prices are useful for any company, not just ones
+    already tracked via a CIK/company-number pathway."""
+    if not _require_alpha_vantage_api_key():
+        return 1
+    if not tickers:
+        print("No tickers to process — pass --ticker one or more times (e.g. --ticker AAPL).", file=sys.stderr)
+        return 1
+
+    adapter = AlphaVantageAdapter(api_key=settings.alpha_vantage_api_key)
+    with SessionLocal() as session:
+        summary = run_price_ingestion(session, adapter, tickers)
+
+    print(f"tickers seen:                {summary.tickers_seen}")
+    print(f"tickers with no data:        {summary.tickers_with_no_data}")
+    print(f"price bars created:          {summary.bars_created}")
+    print(f"price bars skipped (dup):    {summary.bars_skipped_duplicate}")
+    print(f"ticker errors:               {len(summary.ticker_errors)}")
+    for err in summary.ticker_errors:
+        print(f"  - {err}")
+    return 0
+
+
+def backtest_short_interest(holding_trading_days: int) -> int:
+    """Explores what historically followed a rising FINRA short-interest
+    cycle, using whatever real price data has been ingested (Phase 13,
+    pipeline's HISTORICAL VALIDATION stage). Plain descriptive statistics
+    only — never a trading signal or investment advice; see
+    capint.backtesting.engine's module docstring."""
+    with SessionLocal() as session:
+        summary = backtest_rising_short_interest_cycles(
+            session, as_of=datetime.now(timezone.utc), holding_trading_days=holding_trading_days
+        )
+
+    print(f"signals found:                {summary.signal_count}")
+    print(f"forward returns computable:   {summary.computable_count}")
+    if summary.mean_forward_return_pct is not None:
+        print(f"mean forward return:         {summary.mean_forward_return_pct:+.2f}%")
+        print(f"median forward return:       {summary.median_forward_return_pct:+.2f}%")
+        print(f"positive / negative:         {summary.positive_count} / {summary.negative_count}")
+    for r in summary.results:
+        if r.forward_return_pct is not None:
+            print(f"  - {r.signal_date}: {r.entry_date} -> {r.exit_date}: {r.forward_return_pct:+.2f}%")
+        else:
+            print(f"  - {r.signal_date}: {r.note}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="capint")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -433,6 +501,16 @@ def main() -> int:
 
     subparsers.add_parser("evaluate-alerts", help="Evaluate every active alert rule and persist new alerts")
 
+    prices_parser = subparsers.add_parser("ingest-prices", help="Ingest daily OHLCV price bars (Alpha Vantage)")
+    prices_parser.add_argument("--ticker", action="append", default=[], help="Ticker symbol (repeatable)")
+
+    backtest_parser = subparsers.add_parser(
+        "backtest-short-interest", help="Explore forward returns following rising short-interest cycles"
+    )
+    backtest_parser.add_argument(
+        "--holding-trading-days", type=int, default=DEFAULT_HOLDING_TRADING_DAYS, help="Forward holding period in trading days"
+    )
+
     args = parser.parse_args()
     if args.command == "ingest-form4":
         return ingest_form4(args.count)
@@ -456,6 +534,10 @@ def main() -> int:
         return create_alert_rule(args.name, args.rule_type, args.min_score, args.convergence_labels)
     if args.command == "evaluate-alerts":
         return evaluate_alerts()
+    if args.command == "ingest-prices":
+        return ingest_prices(args.ticker)
+    if args.command == "backtest-short-interest":
+        return backtest_short_interest(args.holding_trading_days)
     return 1
 
 

@@ -13,6 +13,7 @@ from capint.models.event import Event, EventType
 from capint.models.insider import InsiderTransaction, InsiderTransactionType
 from capint.models.institution import InstitutionalHolding, InstitutionalManager, InstitutionalManagerType, InstitutionalPositionStatus
 from capint.models.person import Person, PersonCompanyRole
+from capint.models.price import PriceBar
 from capint.models.short_interest import ShortInterestSnapshot
 from capint.models.source import Document, Source, SourceTier
 
@@ -231,3 +232,39 @@ def make_short_interest_snapshot_event(
     session.flush()
 
     return event
+
+
+def make_price_source(session: Session) -> Source:
+    source = Source(name="Alpha Vantage (synthetic)", tier=SourceTier.B_LICENSED, base_url="https://www.alphavantage.co")
+    session.add(source)
+    session.flush()
+    return source
+
+
+def make_price_bar(
+    session: Session,
+    *,
+    company: Company,
+    source: Source,
+    ticker: str,
+    trade_date,
+    close: str,
+    open: str | None = None,
+    high: str | None = None,
+    low: str | None = None,
+    volume: int = 1_000_000,
+) -> PriceBar:
+    bar = PriceBar(
+        company_entity_id=company.entity_id,
+        source_id=source.id,
+        ticker=ticker,
+        trade_date=trade_date,
+        open=Decimal(open if open is not None else close),
+        high=Decimal(high if high is not None else close),
+        low=Decimal(low if low is not None else close),
+        close=Decimal(close),
+        volume=volume,
+    )
+    session.add(bar)
+    session.flush()
+    return bar

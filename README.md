@@ -339,6 +339,24 @@ evaluation logs a fresh row if the signal still triggers. Every alert
 carries `source_event_ids` linking back to the real evidence behind the
 triggering score — never a bare number without a why.
 
+## Backtesting
+
+```bash
+python -m capint.cli ingest-prices --ticker AAPL
+python -m capint.cli backtest-short-interest --holding-trading-days 10
+```
+
+```
+GET /api/v1/backtest/short-interest?holding_trading_days=10
+```
+
+The pipeline's HISTORICAL VALIDATION stage (Phase 13) — reports what
+actually followed a real rising-short-interest signal, using real
+Alpha Vantage daily price bars. **Plain descriptive statistics only, never
+a trading signal or investment advice** — see "Known limitations (Phase
+13)" below for the free tier's ~100-trading-day price-history ceiling and
+full scope notes.
+
 ## Test
 
 ```bash
@@ -861,8 +879,8 @@ documented separately below.
 
 Phase 13 covers three independent extensions the user asked for together
 ("all"): a third Convergence family (short-interest acceleration), an
-alerting layer, and historical validation/backtesting. The first two are
-complete; the third is **not started** — see below.
+alerting layer, and historical validation/backtesting. All three are
+complete.
 
 **Short-interest acceleration (third convergence family):**
 
@@ -910,18 +928,36 @@ complete; the third is **not started** — see below.
   (0 new alerts); served correctly through `/api/v1/alerts` and
   `/api/v1/alert-rules` over HTTP.
 
-**Historical validation / backtesting harness — not started.** This
-needs real historical daily price/return data to check whether a signal
-actually preceded a subsequent price move, and no free, no-registration,
-legally-usable source was found during research for this phase:
-stooq.com blocks automated access behind a JavaScript proof-of-work
-challenge (bypassing it would be circumventing bot detection, which this
-project's rules prohibit); Yahoo Finance's unofficial chart API returned
-HTTP 429 on the very first request and its Terms of Service don't clearly
-permit this kind of automated use; Nasdaq Data Link's free WIKI price
-dataset has been discontinued. The remaining realistic options
-(Alpha Vantage, Financial Modeling Prep, Twelve Data) all require a free
-but self-service API key — the same kind of blocker Phase 11 (Companies
-House) and this phase's crypto/Etherscan note hit, resolved there by the
-user registering a key. That registration hasn't happened yet for a
-price-data provider, so this piece of Phase 13 is deferred until it does.
+**Historical validation / backtesting harness:**
+
+Uses Alpha Vantage daily price bars (free, self-service API key —
+`ALPHA_VANTAGE_API_KEY`, same registration pattern as Companies House in
+Phase 11) to compute what actually followed a real, already-disclosed
+short-interest signal — see "Backtesting" above for usage.
+**Plain descriptive statistics only — never a trading signal, a
+probability, or investment advice.**
+
+- **Only the trailing ~100 trading days of price history are available,
+  confirmed live before building this.** `outputsize=full` (complete
+  multi-year history) is a premium-only feature on Alpha Vantage's free
+  tier — requesting it returns an explicit "Information" error, not data
+  (this adapter treats that as an empty result, not a crash). A signal
+  older than that window has no price data to compute a forward return
+  against; `compute_forward_return` returns an explicit `note` explaining
+  that rather than fabricating a result — never silently omitted.
+- **No statistical significance, multiple-comparison correction, or
+  claim of predictive power** — deliberately, per the reasoning above.
+- **Only backtests the short-interest-acceleration family so far** (the
+  one real, quantitative signal already in this system with a natural
+  "did the price move afterward" question). Insider/institutional/
+  guidance signals could get the same treatment in a future increment;
+  not built here to keep this increment's scope to one concrete,
+  validated example.
+- Validated against real, live data end to end: ingested 100 real trading
+  days each for AAPL and MSFT via the live Alpha Vantage API; ran the
+  real backtest against this system's own real FINRA short-interest
+  signals (both settled 2026-08-31) and got real, hand-verified forward
+  returns (AAPL (316.22-316.85)/316.85 = -0.20%; MSFT
+  (493.95-507.29)/507.29 = -2.63%, both over the following 5 real trading
+  days, 2026-08-31 to 2026-09-08); served correctly through
+  `/api/v1/backtest/short-interest` over HTTP.

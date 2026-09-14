@@ -215,6 +215,58 @@ class AlertOut(BaseModel):
     source_event_ids: list[str]
 
 
+class ForwardReturnResultOut(BaseModel):
+    """Plain descriptive statistics — never a trading signal, probability,
+    or investment advice. See capint.backtesting.engine's module
+    docstring. `forward_return_pct` is None (with `note` explaining why)
+    when there wasn't enough ingested price history to compute it."""
+
+    company_entity_id: UUID
+    signal_date: date
+    holding_trading_days: int
+    entry_date: date | None
+    entry_price: Decimal | None
+    exit_date: date | None
+    exit_price: Decimal | None
+    forward_return_pct: float | None
+    note: str | None
+
+
+class BacktestSummaryOut(BaseModel):
+    signal_count: int
+    computable_count: int
+    mean_forward_return_pct: float | None
+    median_forward_return_pct: float | None
+    positive_count: int
+    negative_count: int
+    results: list[ForwardReturnResultOut]
+
+    @classmethod
+    def from_summary(cls, summary) -> "BacktestSummaryOut":
+        return cls(
+            signal_count=summary.signal_count,
+            computable_count=summary.computable_count,
+            mean_forward_return_pct=summary.mean_forward_return_pct,
+            median_forward_return_pct=summary.median_forward_return_pct,
+            positive_count=summary.positive_count,
+            negative_count=summary.negative_count,
+            results=[
+                ForwardReturnResultOut(
+                    company_entity_id=r.company_entity_id,
+                    signal_date=r.signal_date,
+                    holding_trading_days=r.holding_trading_days,
+                    entry_date=r.entry_date,
+                    entry_price=r.entry_price,
+                    exit_date=r.exit_date,
+                    exit_price=r.exit_price,
+                    forward_return_pct=r.forward_return_pct,
+                    note=r.note,
+                )
+                for r in summary.results
+            ],
+        )
+
+
 class CompanyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

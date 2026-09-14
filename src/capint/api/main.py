@@ -9,6 +9,7 @@ from capint import temporal
 from capint.api.schemas import (
     AlertOut,
     AlertRuleOut,
+    BacktestSummaryOut,
     BeneficialOwnershipDisclosureOut,
     CapitalAllocationFactOut,
     CompanyOut,
@@ -29,6 +30,7 @@ from capint.api.schemas import (
 )
 from capint.convergence.engine import compute_convergence
 from capint.db import get_session
+from capint.backtesting.engine import DEFAULT_HOLDING_TRADING_DAYS, backtest_rising_short_interest_cycles
 from capint.models.alert import Alert, AlertRule
 from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
@@ -650,6 +652,24 @@ def list_alerts(
         stmt = stmt.where(Alert.company_entity_id == company_entity_id)
     alerts = session.execute(stmt).scalars().all()
     return [AlertOut.model_validate(a) for a in alerts]
+
+
+@app.get("/api/v1/backtest/short-interest", response_model=BacktestSummaryOut)
+def backtest_short_interest_endpoint(
+    holding_trading_days: int = Query(default=DEFAULT_HOLDING_TRADING_DAYS, ge=1, le=250),
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    session: Session = Depends(get_session),
+) -> BacktestSummaryOut:
+    """Explores what historically followed a rising FINRA short-interest
+    cycle, using whatever real price data has been ingested (Phase 13,
+    pipeline's HISTORICAL VALIDATION stage). Plain descriptive statistics
+    only — never a trading signal or investment advice; see
+    capint.backtesting.engine's module docstring, and this system's
+    README for the free-tier price-history depth limitation.
+    """
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    summary = backtest_rising_short_interest_cycles(session, as_of=cutoff, holding_trading_days=holding_trading_days)
+    return BacktestSummaryOut.from_summary(summary)
 
 
 @app.get("/health")
