@@ -52,7 +52,7 @@ from capint.ingestion.sec_form4 import run_ingestion as run_form4_ingestion
 from capint.ingestion.sec_guidance import run_ingestion as run_guidance_ingestion
 from capint.ingestion.sec_nport import run_ingestion as run_nport_ingestion
 from capint.ingestion.sec_xbrl import run_ingestion as run_xbrl_ingestion
-from capint.models.alert import AlertRuleType
+from capint.models.alert import AlertRuleType, WebhookFormat
 from capint.models.company import Company
 from capint.models.entity import EntityIdentifier, IdentifierType
 
@@ -324,15 +324,31 @@ def ingest_guidance(ciks: list[str], filing_count: int) -> int:
     return 0
 
 
-def create_alert_rule(name: str, rule_type_str: str, min_score: float | None, convergence_labels: list[str]) -> int:
+def create_alert_rule(
+    name: str,
+    rule_type_str: str,
+    min_score: float | None,
+    convergence_labels: list[str],
+    webhook_url: str | None,
+    webhook_format_str: str,
+) -> int:
     """Creates or updates a user-configured alert rule (Phase 13). Rule
     thresholds are user configuration, not ingested data — no
-    SEC/FINRA/Companies House credential needed."""
+    SEC/FINRA/Companies House credential needed. `--webhook-url` (Phase 16)
+    is optional; a rule with no webhook is still evaluated and still
+    persists Alert rows, it just isn't delivered anywhere."""
     try:
         rule_type = AlertRuleType(rule_type_str)
     except ValueError:
         valid = ", ".join(t.value for t in AlertRuleType)
         print(f"Unknown --rule-type '{rule_type_str}'. Valid values: {valid}", file=sys.stderr)
+        return 1
+
+    try:
+        webhook_format = WebhookFormat(webhook_format_str)
+    except ValueError:
+        valid = ", ".join(f.value for f in WebhookFormat)
+        print(f"Unknown --webhook-format '{webhook_format_str}'. Valid values: {valid}", file=sys.stderr)
         return 1
 
     if rule_type == AlertRuleType.CONVERGENCE_LABEL and not convergence_labels:
@@ -349,8 +365,11 @@ def create_alert_rule(name: str, rule_type_str: str, min_score: float | None, co
             rule_type=rule_type,
             min_composite_score=min_score,
             convergence_labels=convergence_labels or None,
+            webhook_url=webhook_url,
+            webhook_format=webhook_format,
         )
-        print(f"Rule '{rule.name}' ({rule.rule_type.value}) saved with id {rule.id}.")
+        delivery = f", delivering to {rule.webhook_format.value} webhook" if rule.webhook_url else ""
+        print(f"Rule '{rule.name}' ({rule.rule_type.value}) saved with id {rule.id}{delivery}.")
     return 0
 
 
@@ -541,6 +560,19 @@ def main() -> int:
         dest="convergence_labels",
         help="ConvergenceLabel value that triggers this rule (repeatable; rule-type CONVERGENCE_LABEL only)",
     )
+    alert_rule_parser.add_argument(
+        "--webhook-url",
+        default=None,
+        help="Optional outbound webhook URL to POST to when this rule fires (Phase 16). "
+        "User-supplied endpoint — this system holds no notification-service account of its own.",
+    )
+    alert_rule_parser.add_argument(
+        "--webhook-format",
+        default=WebhookFormat.GENERIC.value,
+        choices=[f.value for f in WebhookFormat],
+        help="Payload shape for --webhook-url: GENERIC (this system's own JSON) or SLACK "
+        "(Slack's Incoming Webhook {'text': ...} shape). Ignored if --webhook-url isn't set.",
+    )
 
     subparsers.add_parser("evaluate-alerts", help="Evaluate every active alert rule and persist new alerts")
 
@@ -593,7 +625,9 @@ def main() -> int:
     if args.command == "ingest-guidance":
         return ingest_guidance(args.cik, args.filing_count)
     if args.command == "create-alert-rule":
-        return create_alert_rule(args.name, args.rule_type, args.min_score, args.convergence_labels)
+        return create_alert_rule(
+            args.name, args.rule_type, args.min_score, args.convergence_labels, args.webhook_url, args.webhook_format
+        )
     if args.command == "evaluate-alerts":
         return evaluate_alerts()
     if args.command == "backtest-short-interest":

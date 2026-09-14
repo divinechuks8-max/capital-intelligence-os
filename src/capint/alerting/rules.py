@@ -5,7 +5,7 @@ system's API surface is read-only everywhere else)."""
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from capint.models.alert import AlertRule, AlertRuleType
+from capint.models.alert import AlertRule, AlertRuleType, WebhookFormat
 
 
 def create_or_update_alert_rule(
@@ -14,9 +14,12 @@ def create_or_update_alert_rule(
     rule_type: AlertRuleType,
     min_composite_score: float | None = None,
     convergence_labels: list[str] | None = None,
+    webhook_url: str | None = None,
+    webhook_format: WebhookFormat = WebhookFormat.GENERIC,
 ) -> AlertRule:
     """Get-or-create by name — re-running the same CLI command updates the
-    existing rule's thresholds rather than creating a duplicate."""
+    existing rule's thresholds (and webhook config) rather than creating a
+    duplicate."""
     rule = session.execute(select(AlertRule).where(AlertRule.name == name)).scalar_one_or_none()
     if rule is None:
         rule = AlertRule(name=name, rule_type=rule_type)
@@ -25,6 +28,8 @@ def create_or_update_alert_rule(
         rule.rule_type = rule_type
     rule.min_composite_score = min_composite_score
     rule.convergence_labels = convergence_labels
+    rule.webhook_url = webhook_url
+    rule.webhook_format = webhook_format
     rule.is_active = True
     session.flush()
     session.commit()

@@ -319,6 +319,7 @@ for exactly what that does and doesn't mean yet.
 ```
 python -m capint.cli create-alert-rule --name "High insider conviction" --rule-type INSIDER_CONVICTION_THRESHOLD --min-score 75
 python -m capint.cli create-alert-rule --name "Convergent buying" --rule-type CONVERGENCE_LABEL --convergence-label INSIDER_AND_INSTITUTIONAL_ACCUMULATING
+python -m capint.cli create-alert-rule --name "High insider conviction (Slack)" --rule-type INSIDER_CONVICTION_THRESHOLD --min-score 75 --webhook-url "https://hooks.slack.com/services/..." --webhook-format SLACK
 python -m capint.cli evaluate-alerts
 ```
 
@@ -338,6 +339,37 @@ calendar date) — re-running the same day is a no-op, but a later day's
 evaluation logs a fresh row if the signal still triggers. Every alert
 carries `source_event_ids` linking back to the real evidence behind the
 triggering score — never a bare number without a why.
+
+**Delivery (Phase 16)** is webhook-only, deliberately. `--webhook-url` is
+a plain outbound HTTP endpoint the user supplies and controls (their own
+server, their own Slack workspace's Incoming Webhook, a webhook-to-email
+bridge, etc.) — this system never holds a third-party notification-
+service account or API key of its own, so there is no vendor Terms of
+Service to evaluate (the lesson from the Alpha Vantage/Finnhub/Etherscan
+removals in "Known limitations (Phase 15)"). `--webhook-format GENERIC`
+(default) POSTs this system's own structured JSON payload;
+`--webhook-format SLACK` POSTs Slack's documented Incoming Webhook shape
+(`{"text": "..."}`) so a rule can point directly at a Slack workspace's
+own webhook URL with no separate Slack API integration. Delivery is a
+single, synchronous, best-effort POST attempt made at the moment an
+alert is created — no retry queue or delivery guarantee — recorded on
+the `Alert` row as `delivery_attempted`/`delivery_succeeded`/
+`delivery_error` (all served back via `GET /api/v1/alerts`; the Alert
+row itself, not delivery, is the durable record of what fired).
+`webhook_url` is deliberately never served back by `GET
+/api/v1/alert-rules` — only `webhook_configured` (bool) and
+`webhook_format` — since a webhook URL such as Slack's typically embeds
+a bearer token in its path. Live-validated against a real endpoint
+(`https://httpbin.org/post`, confirmed `delivery_succeeded=True` on real
+alerts generated from real ingested SEC Form 4 data) and against a real
+failing endpoint (`https://httpbin.org/status/500`, confirmed
+`delivery_succeeded=False` with `delivery_error="HTTP 500"` recorded
+without crashing evaluation). Email delivery was considered and not
+built: it would need either user-supplied SMTP credentials (a real,
+viable future increment) or a chosen transactional-email API vendor
+whose Terms of Service haven't been reviewed — a user who wants email
+today can point `--webhook-url` at any webhook-to-email bridge they
+choose under their own account and terms.
 
 ## Backtesting
 
@@ -1336,3 +1368,52 @@ opposite result from every commercial vendor checked this phase.
   Company entity matches the same AAPL entity used by this system's other
   ticker-resolved data from earlier phases; served correctly through
   `/api/v1/news-sentiment` over HTTP.
+
+## Known limitations (Phase 16)
+
+Phase 16 extends Phase 13's alerting layer — which only ever persisted
+`Alert` rows for a consumer to poll via `GET /api/v1/alerts` — with
+actual delivery when a rule fires. See "Alerts" above for the full usage
+and design writeup; this section covers what's deliberately not built.
+
+- **Webhook-only, no first-party notification-service integration** —
+  the design constraint carried directly from Phase 15's compliance
+  findings: this system will not hold an account or API key with any
+  third-party service (email, SMS, push) until that vendor's actual Terms
+  of Service have been read, the same way every ingestion data source now
+  is. A webhook URL is the one delivery mechanism that requires no such
+  review, because the credential and the account belong entirely to the
+  user, not this system.
+- **One-shot, synchronous, best-effort** — a single POST attempt at the
+  moment an alert is created. No retry queue, no exponential backoff, no
+  dead-letter handling, no delivery confirmation beyond the immediate
+  HTTP response. A transient network blip at the moment of creation is a
+  permanently missed delivery (though never a missed alert — the `Alert`
+  row itself is unaffected, and `delivery_succeeded=False` records the
+  failure honestly rather than silently).
+- **No signature/HMAC verification support** — the payload is posted
+  as plain JSON with no shared-secret signing, unlike (for example)
+  GitHub or Stripe webhooks. A user who needs to verify the request
+  actually came from this system would need to add that themselves (e.g.
+  a bearer token embedded in their own webhook URL's query string or
+  path, which this system already treats as opaque and never logs or
+  re-serves — see `AlertRuleOut`'s docstring in
+  `src/capint/api/schemas.py`).
+- **No per-rule rate limiting or digesting** — if a rule's threshold is
+  low enough to fire for many companies in one `evaluate-alerts` run,
+  every one is delivered as a separate webhook POST in sequence, not
+  batched or throttled. For a user-facing product this would eventually
+  need a digest mode; out of scope for this MVP increment.
+- Live-validated against real HTTP endpoints, not just mocked transports:
+  created a real rule pointed at `https://httpbin.org/post`, ran
+  `evaluate-alerts` against real previously-ingested SEC Form 4 insider
+  data, and confirmed 5 real alerts were created with
+  `delivery_attempted=True`/`delivery_succeeded=True`/`delivery_error=None`
+  recorded from httpbin's real 200 response; separately created a rule
+  pointed at `https://httpbin.org/status/500` and confirmed the failure
+  path records `delivery_succeeded=False`/`delivery_error="HTTP 500"`
+  without crashing evaluation of the remaining rules. Both test rules and
+  their alerts were deleted after validation. Also confirmed
+  `GET /api/v1/alert-rules` never serves back the raw `webhook_url` (only
+  a `webhook_configured` boolean and `webhook_format`), and
+  `GET /api/v1/alerts` serves the three new delivery fields correctly.

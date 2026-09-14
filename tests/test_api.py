@@ -287,6 +287,9 @@ def test_alert_rules_and_alerts_endpoints(session):
     rules = rules_resp.json()
     assert len(rules) == 1
     assert rules[0]["name"] == "High insider conviction"
+    assert rules[0]["webhook_configured"] is False
+    assert "webhook_url" not in rules[0]  # never served back — see AlertRuleOut docstring
+    assert rules[0]["webhook_format"] == "GENERIC"
 
     alerts_resp = client.get("/api/v1/alerts")
     assert alerts_resp.status_code == 200
@@ -294,6 +297,9 @@ def test_alert_rules_and_alerts_endpoints(session):
     assert len(alerts) == 1
     assert alerts[0]["rule_id"] == str(rule.id)
     assert alerts[0]["company_entity_id"] == str(company.entity_id)
+    assert alerts[0]["delivery_attempted"] is False
+    assert alerts[0]["delivery_succeeded"] is False
+    assert alerts[0]["delivery_error"] is None
 
     filtered = client.get("/api/v1/alerts", params={"company_entity_id": str(company.entity_id)}).json()
     assert len(filtered) == 1

@@ -5,7 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from capint.convergence.engine import ConvergenceEntry, ConvergenceLabel
 from capint.models.entity import EntityType
@@ -273,7 +273,12 @@ class NewsSentimentSnapshotOut(BaseModel):
 class AlertRuleOut(BaseModel):
     """Rules are user configuration, created via the CLI — this schema
     exists only to read back what's configured, never to create one
-    (this system's API surface is read-only everywhere else)."""
+    (this system's API surface is read-only everywhere else).
+
+    Deliberately exposes `webhook_configured` (a bool) rather than the raw
+    `webhook_url` — a webhook URL (e.g. Slack's) typically embeds a bearer
+    token in its path, so serving it back over a read API would leak a
+    credential the user only intended for outbound delivery."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -283,12 +288,31 @@ class AlertRuleOut(BaseModel):
     min_composite_score: float | None
     convergence_labels: list[str] | None
     is_active: bool
+    webhook_configured: bool
+    webhook_format: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_webhook_configured(cls, obj):
+        if isinstance(obj, dict):
+            return obj
+        return {
+            "id": obj.id,
+            "name": obj.name,
+            "rule_type": obj.rule_type,
+            "min_composite_score": obj.min_composite_score,
+            "convergence_labels": obj.convergence_labels,
+            "is_active": obj.is_active,
+            "webhook_configured": bool(obj.webhook_url),
+            "webhook_format": obj.webhook_format,
+        }
 
 
 class AlertOut(BaseModel):
     """`source_event_ids` links back to the real evidence events behind
     the triggering score — never a bare number without a why (spec's
-    anti-black-box requirement)."""
+    anti-black-box requirement). `delivery_*` fields report the one-shot
+    webhook delivery outcome (Phase 16) — see capint.alerting.delivery."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -300,6 +324,9 @@ class AlertOut(BaseModel):
     composite_score: float | None
     signal_summary: str
     source_event_ids: list[str]
+    delivery_attempted: bool
+    delivery_succeeded: bool
+    delivery_error: str | None
 
 
 class ForwardReturnResultOut(BaseModel):

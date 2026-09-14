@@ -14,6 +14,11 @@ radar's default top_n=25 — a real signal below the top-25 cutoff for its
 own radar must still be able to trigger a rule if it clears the rule's
 own threshold, so this module calls each radar/convergence function with
 a large `top_n` rather than relying on the default.
+
+Phase 16 adds webhook delivery: a newly-created Alert is handed to
+capint.alerting.delivery.deliver_alert immediately, which is a no-op if
+the rule has no webhook_url configured — see that module's docstring for
+the full delivery design and why it's webhook-only.
 """
 
 from __future__ import annotations
@@ -22,9 +27,11 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from capint.alerting.delivery import deliver_alert
 from capint.convergence.engine import compute_convergence
 from capint.models.alert import Alert, AlertRule, AlertRuleType
 from capint.radar.insider_radar import compute_insider_radar
@@ -42,11 +49,13 @@ def _upsert_alert(
     composite_score: float | None,
     signal_summary: str,
     source_event_ids: list[uuid.UUID],
+    http_client: httpx.Client | None = None,
 ) -> bool:
     """Returns False if an alert for this (rule, company, date) already
     exists (idempotent no-op) — see capint.models.alert.Alert's docstring
     for why the dedup key is per calendar date, not per underlying score
-    value."""
+    value. A newly-created alert is delivered (best-effort, see
+    capint.alerting.delivery) before this function returns."""
     alert_date = as_of.date()
     existing = session.execute(
         select(Alert).where(
@@ -58,25 +67,29 @@ def _upsert_alert(
     if existing is not None:
         return False
 
-    session.add(
-        Alert(
-            rule_id=rule.id,
-            company_entity_id=company_entity_id,
-            alert_date=alert_date,
-            triggered_at=as_of,
-            composite_score=composite_score,
-            signal_summary=signal_summary,
-            source_event_ids=[str(e) for e in source_event_ids],
-        )
+    alert = Alert(
+        rule_id=rule.id,
+        company_entity_id=company_entity_id,
+        alert_date=alert_date,
+        triggered_at=as_of,
+        composite_score=composite_score,
+        signal_summary=signal_summary,
+        source_event_ids=[str(e) for e in source_event_ids],
     )
+    session.add(alert)
+    session.flush()
+
+    deliver_alert(alert, rule, client=http_client)
     session.flush()
     return True
 
 
-def evaluate_rule(session: Session, rule: AlertRule, as_of: datetime) -> int:
+def evaluate_rule(session: Session, rule: AlertRule, as_of: datetime, http_client: httpx.Client | None = None) -> int:
     """Evaluates one active rule against current signal output as of
     `as_of`, persisting a new Alert for each newly-triggering company.
-    Returns the number of new alerts created."""
+    Returns the number of new alerts created. `http_client` is passed
+    through to capint.alerting.delivery.deliver_alert for each new
+    alert — tests inject a mock transport here."""
     created = 0
 
     if rule.rule_type == AlertRuleType.INSIDER_CONVICTION_THRESHOLD:
@@ -93,7 +106,7 @@ def evaluate_rule(session: Session, rule: AlertRule, as_of: datetime) -> int:
             )
             if _upsert_alert(
                 session, rule, score.company_entity_id, as_of, score.composite_score, summary,
-                [e.event_id for e in score.evidence],
+                [e.event_id for e in score.evidence], http_client=http_client,
             ):
                 created += 1
 
@@ -112,7 +125,7 @@ def evaluate_rule(session: Session, rule: AlertRule, as_of: datetime) -> int:
             )
             if _upsert_alert(
                 session, rule, score.company_entity_id, as_of, score.composite_score, summary,
-                [e.event_id for e in score.evidence],
+                [e.event_id for e in score.evidence], http_client=http_client,
             ):
                 created += 1
 
@@ -130,7 +143,7 @@ def evaluate_rule(session: Session, rule: AlertRule, as_of: datetime) -> int:
             )
             if _upsert_alert(
                 session, rule, score.company_entity_id, as_of, score.composite_score, summary,
-                [e.event_id for e in score.evidence],
+                [e.event_id for e in score.evidence], http_client=http_client,
             ):
                 created += 1
 
@@ -148,7 +161,8 @@ def evaluate_rule(session: Session, rule: AlertRule, as_of: datetime) -> int:
             if entry.short_interest_score is not None:
                 event_ids.extend(e.event_id for e in entry.short_interest_score.evidence)
             if _upsert_alert(
-                session, rule, entry.company_entity_id, as_of, None, entry.label_explanation, event_ids
+                session, rule, entry.company_entity_id, as_of, None, entry.label_explanation, event_ids,
+                http_client=http_client,
             ):
                 created += 1
 
@@ -162,7 +176,12 @@ class AlertEvaluationSummary:
     rule_errors: list[str] = field(default_factory=list)
 
 
-def evaluate_all_active_rules(session: Session, as_of: datetime | None = None) -> AlertEvaluationSummary:
+def evaluate_all_active_rules(
+    session: Session, as_of: datetime | None = None, http_client: httpx.Client | None = None
+) -> AlertEvaluationSummary:
+    """`http_client` is passed through to every rule's delivery calls —
+    tests inject a single shared mock-transport client here rather than
+    letting each delivery open its own real connection."""
     as_of = as_of or datetime.now(timezone.utc)
     summary = AlertEvaluationSummary()
 
@@ -170,7 +189,7 @@ def evaluate_all_active_rules(session: Session, as_of: datetime | None = None) -
     for rule in rules:
         summary.rules_evaluated += 1
         try:
-            summary.alerts_created += evaluate_rule(session, rule, as_of)
+            summary.alerts_created += evaluate_rule(session, rule, as_of, http_client=http_client)
         except Exception as exc:  # noqa: BLE001 — one bad rule must not abort the batch
             summary.rule_errors.append(f"{rule.name}: {exc!r}")
 

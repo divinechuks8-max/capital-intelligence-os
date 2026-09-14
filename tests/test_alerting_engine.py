@@ -1,10 +1,11 @@
 from datetime import date
 
+import httpx
 from sqlalchemy import select
 
 from capint.alerting.engine import evaluate_all_active_rules, evaluate_rule
 from capint.alerting.rules import create_or_update_alert_rule
-from capint.models.alert import Alert, AlertRuleType
+from capint.models.alert import Alert, AlertRuleType, WebhookFormat
 from capint.models.institution import InstitutionalPositionStatus
 from tests.fixtures.synthetic import (
     dt,
@@ -185,3 +186,60 @@ def test_evaluate_all_active_rules_skips_inactive_rules(session):
     summary = evaluate_all_active_rules(session, as_of=dt(2026, 6, 1))
     assert summary.rules_evaluated == 0
     assert summary.alerts_created == 0
+
+
+def test_new_alert_is_delivered_to_configured_webhook(session):
+    source = make_sec_source(session)
+    company = make_company(session)
+    person = make_person(session)
+
+    make_insider_purchase_event(
+        session, company=company, person=person, source=source,
+        event_time=dt(2026, 5, 15), publication_time=dt(2026, 5, 16), shares="100000", price="50.00",
+    )
+    session.commit()
+
+    rule = create_or_update_alert_rule(
+        session, name="High insider conviction", rule_type=AlertRuleType.INSIDER_CONVICTION_THRESHOLD,
+        min_composite_score=0.0, webhook_url="https://example.com/hook", webhook_format=WebhookFormat.GENERIC,
+    )
+
+    captured_requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    created = evaluate_rule(session, rule, as_of=dt(2026, 6, 1), http_client=client)
+    assert created == 1
+
+    alert = session.execute(select(Alert).where(Alert.rule_id == rule.id)).scalar_one()
+    assert alert.delivery_attempted is True
+    assert alert.delivery_succeeded is True
+    assert len(captured_requests) == 1
+
+
+def test_alert_delivery_is_skipped_without_webhook_url(session):
+    source = make_sec_source(session)
+    company = make_company(session)
+    person = make_person(session)
+
+    make_insider_purchase_event(
+        session, company=company, person=person, source=source,
+        event_time=dt(2026, 5, 15), publication_time=dt(2026, 5, 16), shares="100000", price="50.00",
+    )
+    session.commit()
+
+    rule = create_or_update_alert_rule(
+        session, name="High insider conviction", rule_type=AlertRuleType.INSIDER_CONVICTION_THRESHOLD,
+        min_composite_score=0.0,
+    )
+
+    created = evaluate_rule(session, rule, as_of=dt(2026, 6, 1))
+    assert created == 1
+
+    alert = session.execute(select(Alert).where(Alert.rule_id == rule.id)).scalar_one()
+    assert alert.delivery_attempted is False
+    assert alert.delivery_succeeded is False
+    assert alert.delivery_error is None

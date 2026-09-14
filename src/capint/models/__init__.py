@@ -1,4 +1,4 @@
-from capint.models.alert import Alert, AlertRule, AlertRuleType
+from capint.models.alert import Alert, AlertRule, AlertRuleType, WebhookFormat
 from capint.models.analyst import AnalystRecommendationTrend
 from capint.models.base import Base
 from capint.models.capital_allocation import CapitalAllocationFact
@@ -65,4 +65,5 @@ __all__ = [
     "SourceTier",
     "UKPersonWithSignificantControl",
     "VolatilityIndexLevel",
+    "WebhookFormat",
 ]
