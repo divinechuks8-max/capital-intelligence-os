@@ -1,8 +1,11 @@
 import logging
 from datetime import datetime
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -71,6 +74,8 @@ from capint.scoring.short_interest_acceleration import DEFAULT_LOOKBACK_CYCLES a
 logging.basicConfig(level=settings.log_level)
 
 app = FastAPI(title="Capital Intelligence OS", version="0.1.0")
+
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 
 @app.get("/api/v1/companies", response_model=list[CompanyOut])
@@ -836,6 +841,22 @@ def backtest_short_interest_endpoint(
     cutoff = as_of or datetime.now(tz=None).astimezone()
     summary = backtest_rising_short_interest_cycles(session, as_of=cutoff, holding_trading_days=holding_trading_days)
     return BacktestSummaryOut.from_summary(summary)
+
+
+_DASHBOARD_HTML_PATH = Path(__file__).parent / "static" / "dashboard.html"
+
+
+@app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+def dashboard() -> str:
+    """A read-only visual summary over this same instance's own
+    /api/v1/* endpoints — added on request, not part of any of the 18
+    original roadmap phases. All rendering/routing/search happens
+    client-side in static/dashboard.js against real GETs to the endpoints
+    already built by every phase; this route and the /static mount below
+    are the only server-side additions, and neither adds new queries or
+    business logic beyond serving these static files. See README
+    "Dashboard" for what it shows and its known limitations."""
+    return _DASHBOARD_HTML_PATH.read_text(encoding="utf-8")
 
 
 @app.get("/health")

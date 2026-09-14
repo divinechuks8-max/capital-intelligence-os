@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Capital Intelligence OS</title>
+<link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+<nav class="topnav">
+  <div class="brand"><span class="dot"></span><h1>Capital Intelligence OS</h1></div>
+  <div class="crumbs" id="crumbs"></div>
+  <div class="search-wrap">
+    <input id="search" class="search-input" type="text" placeholder="Search companies…" autocomplete="off">
+    <div id="search-results" class="search-results" hidden></div>
+  </div>
+  <div class="ts">live local read · <span id="ts"></span></div>
+</nav>
+<main id="app"><div class="loading">loading</div></main>
+<footer>Every number on this page came from a real GET to this instance's own /api/v1/* endpoints on load. Research/decision support only — nothing here is investment advice.</footer>
+<script src="/static/dashboard.js"></script>
+</body>
+</html>

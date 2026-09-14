@@ -40,6 +40,24 @@ def test_health_reports_503_when_database_unreachable():
         broken_session.close()
 
 
+def test_dashboard_serves_html(session):
+    client = next(make_client(session))
+    resp = client.get("/dashboard")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    assert "Capital Intelligence OS" in resp.text
+    assert '<script src="/static/dashboard.js">' in resp.text
+
+
+def test_dashboard_static_assets_are_served(session):
+    client = next(make_client(session))
+    css = client.get("/static/dashboard.css")
+    js = client.get("/static/dashboard.js")
+    assert css.status_code == 200
+    assert js.status_code == 200
+    assert "function main" in js.text
+
+
 def test_list_companies_and_point_in_time_events(session):
     source = make_sec_source(session)
     company = make_company(session)

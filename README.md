@@ -29,11 +29,52 @@ SQLite engine (see `tests/conftest.py`).
 ## Run the API
 
 ```bash
-uvicorn capint.api.main:app --reload
+PYTHONPATH=src uvicorn capint.api.main:app --reload
+# or, equivalently, with no env var needed:
+python dev_server.py
 ```
 
-`--reload` is a dev-only hot-reload flag (file-watcher, extra overhead) —
-see "Deployment" below for how to run this in production.
+`capint` has no packaging metadata (see `pyproject.toml`), so it's only
+importable with `src` on the path — `PYTHONPATH=src` above, or
+`dev_server.py`, a tiny wrapper that does the same thing programmatically
+and is also what `.claude/launch.json` uses to preview this in an
+in-editor browser pane. `--reload` is a dev-only hot-reload flag (file-
+watcher, extra overhead) — see "Deployment" below for how to run this in
+production, where neither of the above applies (the Dockerfile sets
+`PYTHONPATH` itself).
+
+## Dashboard
+
+```
+GET /dashboard
+```
+
+A read-only visual summary over this same instance's own `/api/v1/*`
+endpoints — added on request, not part of any of the 18 original roadmap
+phases. Everything renders client-side (`src/capint/api/static/
+dashboard.js`, plain JS, no framework, no external chart library — every
+chart is hand-rolled SVG) from real `fetch()` calls to the same endpoints
+documented elsewhere in this README; `/dashboard` and the `/static`
+mount it depends on are the only server-side additions, and neither adds
+a new query or new business logic. Shows: ranked bar charts for all
+three radars, a convergence-label donut, a VIX area chart, alerts and
+news-sentiment tables, and — click any company anywhere, or use the
+search box in the top nav (matches name/sector/country, arrow keys +
+Enter to jump) — a per-company drill-down page with every radar's full
+score-component breakdown and underlying evidence table, not just the
+summary number.
+
+**Known limitations**: no radar endpoint is company-scoped server-side,
+so the dashboard fetches each radar once at `top_n=500` (the API's
+current max) and filters/looks up client-side — fine at this system's
+present scale (dozens of companies), but would need a real
+`company_entity_id` filter param added to those endpoints before this
+approach would still be reasonable at hundreds/thousands of companies.
+No tests exercise the JS itself (`src/capint/api/static/dashboard.js`),
+only that the two server-side routes serving it respond correctly
+(`tests/test_api.py`) — there's no browser-based test runner in this
+project's toolchain, and adding one felt like disproportionate weight
+for a client-side view over already-tested endpoints.
 
 ## Deployment
 
