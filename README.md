@@ -280,20 +280,64 @@ holding-level evidence. See
 what "accumulation" means here, including how a position increase's dollar
 value is estimated (13F doesn't disclose a cost basis).
 
-## Convergence (two-family)
+## Short Interest Radar
 
 ```
-GET /api/v1/radar/convergence?insider_window_days=90&institutional_window_days=365&top_n=25
+GET /api/v1/radar/short-interest?lookback_cycles=12&top_n=25&as_of=2026-06-01T00:00:00Z
 ```
 
-For each company with an insider and/or institutional signal, returns
-**both scores side by side** (never blended into one number — spec §33)
-plus a label: `INSIDER_AND_INSTITUTIONAL_ACCUMULATING`,
-`MIXED_INSIDER_BUYING_INSTITUTIONAL_SELLING`, `INSIDER_ONLY`, or
-`INSTITUTIONAL_ONLY`. This is deliberately a two-family stand-in for the
-spec's full multi-family Convergence Engine (§29) — see
-`src/capint/convergence/engine.py`'s module docstring for exactly what
-that does and doesn't mean yet.
+Ranks companies by FINRA short-interest acceleration (Phase 13). **Only
+rising short interest is scored** — short covering (a falling cycle) is a
+different, real signal this radar doesn't evaluate, mirroring how
+Insider/Institutional Radar only score buying/accumulation. Three named
+components (magnitude-vs-own-history, days-to-cover-vs-own-history,
+persistence) plus the underlying settlement-cycle evidence. See
+`src/capint/scoring/short_interest_acceleration.py`'s module docstring for
+exactly what "acceleration" means here.
+
+## Convergence (three-family)
+
+```
+GET /api/v1/radar/convergence?insider_window_days=90&institutional_window_days=365&short_interest_lookback_cycles=12&top_n=25
+```
+
+For each company with an insider, institutional, and/or short-interest
+signal, returns **every score side by side** (never blended into one
+number — spec §33) plus a label. The label still characterizes only the
+insider/institutional relationship (unchanged since Phase 5) —
+`INSIDER_AND_INSTITUTIONAL_ACCUMULATING`,
+`MIXED_INSIDER_BUYING_INSTITUTIONAL_SELLING`, `INSIDER_ONLY`,
+`INSTITUTIONAL_ONLY`, or (Phase 13) `SHORT_INTEREST_ONLY` for a company
+with no insider/institutional signal at all. `short_interest_score` is
+always available independently regardless of label. This is deliberately
+a three-family stand-in for the spec's full multi-family Convergence
+Engine (§29) — see `src/capint/convergence/engine.py`'s module docstring
+for exactly what that does and doesn't mean yet.
+
+## Alerts
+
+```
+python -m capint.cli create-alert-rule --name "High insider conviction" --rule-type INSIDER_CONVICTION_THRESHOLD --min-score 75
+python -m capint.cli create-alert-rule --name "Convergent buying" --rule-type CONVERGENCE_LABEL --convergence-label INSIDER_AND_INSTITUTIONAL_ACCUMULATING
+python -m capint.cli evaluate-alerts
+```
+
+```
+GET /api/v1/alert-rules
+GET /api/v1/alerts?rule_id=...&company_entity_id=...
+```
+
+The pipeline's ALERT stage (Phase 13) — persists which companies crossed
+a configured threshold as of an evaluation run, rather than requiring a
+consumer to recompute and compare radar/convergence output themselves
+every time. Rules are user configuration created via the CLI (this
+system's API is read-only everywhere else); `evaluate-alerts` reuses the
+existing radar/convergence modules untouched and simply checks their
+output against each active rule. Deduplicated per (rule, company,
+calendar date) — re-running the same day is a no-op, but a later day's
+evaluation logs a fresh row if the signal still triggers. Every alert
+carries `source_event_ids` linking back to the real evidence behind the
+triggering score — never a bare number without a why.
 
 ## Test
 
@@ -812,3 +856,72 @@ documented separately below.
   quarterly earnings cadence (accession numbers and dates cross-checked
   against SEC EDGAR directly); idempotent re-ingestion confirmed; served
   correctly through `/api/v1/guidance-disclosures` over HTTP.
+
+## Known limitations (Phase 13)
+
+Phase 13 covers three independent extensions the user asked for together
+("all"): a third Convergence family (short-interest acceleration), an
+alerting layer, and historical validation/backtesting. The first two are
+complete; the third is **not started** — see below.
+
+**Short-interest acceleration (third convergence family):**
+
+- **Only rising short interest is scored**, mirroring Phase 3/5's
+  "only buying/accumulation counts" convention — short covering (a
+  falling cycle) is a different, real signal this module doesn't
+  evaluate.
+- **The Convergence Engine's `label`/`label_explanation` fields still
+  characterize only the insider/institutional relationship, unchanged
+  since Phase 5.** `short_interest_score` is exposed as a fully
+  independent third field (never blended, per spec §33), but extending
+  the label taxonomy itself to a genuine N-way combination (e.g.
+  "insiders buying despite rising short interest") would need a
+  combinatorial label space this increment deliberately doesn't build.
+  A consumer wanting that read compares `label` and `short_interest_score`
+  together.
+- Validated against real, live FINRA short-interest data already in this
+  system (Phase 10): MSFT and AAPL both correctly appear in
+  `/api/v1/radar/short-interest` and as `SHORT_INTEREST_ONLY` in
+  `/api/v1/radar/convergence` (neither has insider/institutional activity
+  ingested), with composite scores correctly built only from the
+  persistence component given each has too little settlement-cycle
+  history yet for the magnitude/days-to-cover comparisons.
+
+**Alerting layer:**
+
+- **Deliberately thin** — every rule type reuses an existing scoring/
+  radar/convergence module untouched; this layer only decides what's
+  worth persisting as "surfaced," never computes a signal of its own.
+- **No compound/boolean rule logic** — a rule watches exactly one signal
+  type against one threshold or label set, not combinations across types.
+- **Deduplicated per (rule, company, calendar date), not per underlying
+  score value** — re-running evaluation the same day is a no-op; a later
+  day's evaluation logs a fresh row if the signal still triggers, acting
+  as a simple "still elevated as of this date" log rather than a single
+  mutable "currently active" flag.
+- **Rule creation is CLI-only** (`create-alert-rule`) — this system's API
+  surface stays read-only everywhere, consistent with every prior phase;
+  rules are user configuration, not ingested external data.
+- Validated end to end against real data already in this system: created
+  a `SHORT_INTEREST_ACCELERATION_THRESHOLD` rule and a `CONVERGENCE_LABEL`
+  rule, ran `evaluate-alerts` against real AAPL/MSFT short-interest data,
+  got 4 real alerts with correct `signal_summary` text (e.g. "+20.13% in
+  the cycle settled 2026-08-31"); re-running confirmed fully idempotent
+  (0 new alerts); served correctly through `/api/v1/alerts` and
+  `/api/v1/alert-rules` over HTTP.
+
+**Historical validation / backtesting harness — not started.** This
+needs real historical daily price/return data to check whether a signal
+actually preceded a subsequent price move, and no free, no-registration,
+legally-usable source was found during research for this phase:
+stooq.com blocks automated access behind a JavaScript proof-of-work
+challenge (bypassing it would be circumventing bot detection, which this
+project's rules prohibit); Yahoo Finance's unofficial chart API returned
+HTTP 429 on the very first request and its Terms of Service don't clearly
+permit this kind of automated use; Nasdaq Data Link's free WIKI price
+dataset has been discontinued. The remaining realistic options
+(Alpha Vantage, Financial Modeling Prep, Twelve Data) all require a free
+but self-service API key — the same kind of blocker Phase 11 (Companies
+House) and this phase's crypto/Etherscan note hit, resolved there by the
+user registering a key. That registration hasn't happened yet for a
+price-data provider, so this piece of Phase 13 is deferred until it does.

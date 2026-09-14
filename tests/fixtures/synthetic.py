@@ -13,6 +13,7 @@ from capint.models.event import Event, EventType
 from capint.models.insider import InsiderTransaction, InsiderTransactionType
 from capint.models.institution import InstitutionalHolding, InstitutionalManager, InstitutionalManagerType, InstitutionalPositionStatus
 from capint.models.person import Person, PersonCompanyRole
+from capint.models.short_interest import ShortInterestSnapshot
 from capint.models.source import Document, Source, SourceTier
 
 
@@ -172,6 +173,61 @@ def make_institutional_holding_event(
         filing_form_type="13F-HR",
     )
     session.add(holding)
+    session.flush()
+
+    return event
+
+
+def make_short_interest_snapshot_event(
+    session: Session,
+    *,
+    company: Company,
+    source: Source,
+    ticker: str,
+    settlement_date,
+    publication_time: datetime,
+    current_short_position: str,
+    previous_short_position: str | None,
+    change_percent: str | None,
+    days_to_cover: str | None,
+) -> Event:
+    """Builds a full Event + Document + ShortInterestSnapshot chain,
+    mirroring what a real FINRA ingestion would produce."""
+    document = Document(
+        source_id=source.id,
+        external_id=f"SYNTHETIC-FINRA-{ticker}-{settlement_date}",
+        url="https://api.finra.org/synthetic-fixture-short-interest",
+        retrieved_at=publication_time,
+    )
+    session.add(document)
+    session.flush()
+
+    event_time = datetime.combine(settlement_date, datetime.min.time(), tzinfo=timezone.utc)
+    event = Event(
+        event_type=EventType.SHORT_INTEREST_CHANGE,
+        primary_entity_id=company.entity_id,
+        event_time=event_time,
+        publication_time=publication_time,
+        source_id=source.id,
+        document_id=document.id,
+        confidence=1.0,
+        raw_data_reference=f"document:{document.id}",
+    )
+    session.add(event)
+    session.flush()
+
+    session.add(
+        ShortInterestSnapshot(
+            event_id=event.id,
+            company_entity_id=company.entity_id,
+            ticker=ticker,
+            settlement_date=settlement_date,
+            current_short_position=Decimal(current_short_position),
+            previous_short_position=Decimal(previous_short_position) if previous_short_position is not None else None,
+            change_percent=Decimal(change_percent) if change_percent is not None else None,
+            days_to_cover=Decimal(days_to_cover) if days_to_cover is not None else None,
+        )
+    )
     session.flush()
 
     return event

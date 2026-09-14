@@ -9,6 +9,8 @@
     python -m capint.cli ingest-uk-psc --company-number 05151321
     python -m capint.cli ingest-crypto-treasury --address 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
     python -m capint.cli ingest-guidance --cik 0000320193
+    python -m capint.cli create-alert-rule --name "High insider conviction" --rule-type INSIDER_CONVICTION_THRESHOLD --min-score 75
+    python -m capint.cli evaluate-alerts
 """
 
 import argparse
@@ -26,6 +28,8 @@ from capint.adapters.sec_edgar import SECEdgarForm4Adapter
 from capint.adapters.sec_guidance import SECGuidanceDisclosureAdapter
 from capint.adapters.sec_nport import SECNPortAdapter
 from capint.adapters.sec_xbrl import SECXBRLFactsAdapter
+from capint.alerting.engine import evaluate_all_active_rules
+from capint.alerting.rules import create_or_update_alert_rule
 from capint.config import settings
 from capint.db import SessionLocal
 from capint.ingestion.blockchain_info import run_ingestion as run_crypto_treasury_ingestion
@@ -37,6 +41,7 @@ from capint.ingestion.sec_form4 import run_ingestion as run_form4_ingestion
 from capint.ingestion.sec_guidance import run_ingestion as run_guidance_ingestion
 from capint.ingestion.sec_nport import run_ingestion as run_nport_ingestion
 from capint.ingestion.sec_xbrl import run_ingestion as run_xbrl_ingestion
+from capint.models.alert import AlertRuleType
 from capint.models.company import Company
 from capint.models.entity import EntityIdentifier, IdentifierType
 
@@ -308,6 +313,51 @@ def ingest_guidance(ciks: list[str], filing_count: int) -> int:
     return 0
 
 
+def create_alert_rule(name: str, rule_type_str: str, min_score: float | None, convergence_labels: list[str]) -> int:
+    """Creates or updates a user-configured alert rule (Phase 13). Rule
+    thresholds are user configuration, not ingested data — no
+    SEC/FINRA/Companies House credential needed."""
+    try:
+        rule_type = AlertRuleType(rule_type_str)
+    except ValueError:
+        valid = ", ".join(t.value for t in AlertRuleType)
+        print(f"Unknown --rule-type '{rule_type_str}'. Valid values: {valid}", file=sys.stderr)
+        return 1
+
+    if rule_type == AlertRuleType.CONVERGENCE_LABEL and not convergence_labels:
+        print("--convergence-label is required (repeatable) for rule-type CONVERGENCE_LABEL.", file=sys.stderr)
+        return 1
+    if rule_type != AlertRuleType.CONVERGENCE_LABEL and min_score is None:
+        print("--min-score is required for threshold-based rule types.", file=sys.stderr)
+        return 1
+
+    with SessionLocal() as session:
+        rule = create_or_update_alert_rule(
+            session,
+            name=name,
+            rule_type=rule_type,
+            min_composite_score=min_score,
+            convergence_labels=convergence_labels or None,
+        )
+        print(f"Rule '{rule.name}' ({rule.rule_type.value}) saved with id {rule.id}.")
+    return 0
+
+
+def evaluate_alerts() -> int:
+    """Evaluates every active alert rule against current signal output and
+    persists newly-triggering alerts (Phase 13). No external data source —
+    purely reads what's already been ingested."""
+    with SessionLocal() as session:
+        summary = evaluate_all_active_rules(session)
+
+    print(f"rules evaluated:      {summary.rules_evaluated}")
+    print(f"alerts created:       {summary.alerts_created}")
+    print(f"rule errors:          {len(summary.rule_errors)}")
+    for err in summary.rule_errors:
+        print(f"  - {err}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="capint")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -362,6 +412,27 @@ def main() -> int:
     guidance_parser.add_argument("--cik", action="append", default=[], help="Company CIK (repeatable)")
     guidance_parser.add_argument("--filing-count", type=int, default=20, help="Max recent 8-K filings to scan per company")
 
+    alert_rule_parser = subparsers.add_parser("create-alert-rule", help="Create or update a user-configured alert rule")
+    alert_rule_parser.add_argument("--name", required=True, help="Unique rule name")
+    alert_rule_parser.add_argument(
+        "--rule-type",
+        required=True,
+        choices=[t.value for t in AlertRuleType],
+        help="Which signal this rule watches",
+    )
+    alert_rule_parser.add_argument(
+        "--min-score", type=float, default=None, help="Minimum composite score (threshold-based rule types)"
+    )
+    alert_rule_parser.add_argument(
+        "--convergence-label",
+        action="append",
+        default=[],
+        dest="convergence_labels",
+        help="ConvergenceLabel value that triggers this rule (repeatable; rule-type CONVERGENCE_LABEL only)",
+    )
+
+    subparsers.add_parser("evaluate-alerts", help="Evaluate every active alert rule and persist new alerts")
+
     args = parser.parse_args()
     if args.command == "ingest-form4":
         return ingest_form4(args.count)
@@ -381,6 +452,10 @@ def main() -> int:
         return ingest_crypto_treasury(args.address, args.limit)
     if args.command == "ingest-guidance":
         return ingest_guidance(args.cik, args.filing_count)
+    if args.command == "create-alert-rule":
+        return create_alert_rule(args.name, args.rule_type, args.min_score, args.convergence_labels)
+    if args.command == "evaluate-alerts":
+        return evaluate_alerts()
     return 1
 
 

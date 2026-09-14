@@ -1,3 +1,4 @@
+from capint.models.alert import Alert, AlertRule, AlertRuleType
 from capint.models.base import Base
 from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
@@ -21,6 +22,9 @@ from capint.models.source import Document, Source, SourceTier
 from capint.models.uk_psc import UKPersonWithSignificantControl
 
 __all__ = [
+    "Alert",
+    "AlertRule",
+    "AlertRuleType",
     "Base",
     "BeneficialOwnershipDisclosure",
     "CapitalAllocationFact",

@@ -260,6 +260,49 @@ def test_guidance_disclosures_endpoint(session):
     assert len(filtered) == 2
 
 
+def test_alert_rules_and_alerts_endpoints(session):
+    from capint.alerting.engine import evaluate_all_active_rules
+    from capint.alerting.rules import create_or_update_alert_rule
+    from capint.models.alert import AlertRuleType
+
+    source = make_sec_source(session)
+    company = make_company(session)
+    person = make_person(session)
+
+    make_insider_purchase_event(
+        session, company=company, person=person, source=source,
+        event_time=dt(2026, 5, 15), publication_time=dt(2026, 5, 16), shares="100000", price="50.00",
+    )
+    session.commit()
+
+    rule = create_or_update_alert_rule(
+        session, name="High insider conviction", rule_type=AlertRuleType.INSIDER_CONVICTION_THRESHOLD, min_composite_score=0.0
+    )
+    evaluate_all_active_rules(session, as_of=dt(2026, 6, 1))
+
+    client = next(make_client(session))
+
+    rules_resp = client.get("/api/v1/alert-rules")
+    assert rules_resp.status_code == 200
+    rules = rules_resp.json()
+    assert len(rules) == 1
+    assert rules[0]["name"] == "High insider conviction"
+
+    alerts_resp = client.get("/api/v1/alerts")
+    assert alerts_resp.status_code == 200
+    alerts = alerts_resp.json()
+    assert len(alerts) == 1
+    assert alerts[0]["rule_id"] == str(rule.id)
+    assert alerts[0]["company_entity_id"] == str(company.entity_id)
+
+    filtered = client.get("/api/v1/alerts", params={"company_entity_id": str(company.entity_id)}).json()
+    assert len(filtered) == 1
+
+    none_filtered = client.get("/api/v1/alerts", params={"rule_id": str(company.entity_id)})
+    assert none_filtered.status_code == 200
+    assert none_filtered.json() == []
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 
@@ -375,3 +418,42 @@ def test_institutional_radar_and_convergence_endpoints(session):
     assert entry["label"] == "INSIDER_AND_INSTITUTIONAL_ACCUMULATING"
     assert entry["insider_score"] is not None
     assert entry["institutional_score"] is not None
+    assert entry["short_interest_score"] is None  # no short-interest data ingested for this test
+
+
+def test_short_interest_radar_and_convergence_third_family(session):
+    from tests.fixtures.synthetic import make_short_interest_snapshot_event
+
+    source = make_sec_source(session)
+    company = make_company(session)
+
+    make_short_interest_snapshot_event(
+        session,
+        company=company,
+        source=source,
+        ticker="TEST",
+        settlement_date=dt(2026, 5, 15).date(),
+        publication_time=dt(2026, 5, 16),
+        current_short_position="1100000",
+        previous_short_position="1000000",
+        change_percent="10.00",
+        days_to_cover="2.00",
+    )
+    session.commit()
+
+    client = next(make_client(session))
+
+    si_resp = client.get("/api/v1/radar/short-interest", params={"as_of": "2026-06-01T00:00:00Z"})
+    assert si_resp.status_code == 200
+    si_entries = si_resp.json()
+    assert len(si_entries) == 1
+    assert si_entries[0]["company_entity_id"] == str(company.entity_id)
+    assert si_entries[0]["latest_change_percent"] == "10.00"
+
+    conv_resp = client.get("/api/v1/radar/convergence", params={"as_of": "2026-06-01T00:00:00Z"})
+    assert conv_resp.status_code == 200
+    entry = next(e for e in conv_resp.json() if e["company_entity_id"] == str(company.entity_id))
+    assert entry["label"] == "SHORT_INTEREST_ONLY"
+    assert entry["insider_score"] is None
+    assert entry["institutional_score"] is None
+    assert entry["short_interest_score"] is not None

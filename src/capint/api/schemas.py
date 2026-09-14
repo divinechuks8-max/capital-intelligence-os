@@ -15,6 +15,7 @@ from capint.models.institution import InstitutionalManagerType, InstitutionalPos
 from capint.models.ownership import ScheduleType
 from capint.scoring.insider_conviction import InsiderConvictionScore
 from capint.scoring.institutional_accumulation import InstitutionalAccumulationScore
+from capint.scoring.short_interest_acceleration import ShortInterestAccelerationScore
 
 
 class CapitalAllocationFactOut(BaseModel):
@@ -180,6 +181,38 @@ class GuidanceDisclosureOut(BaseModel):
     filing_accession: str
     primary_document_url: str | None
     publication_time: datetime
+
+
+class AlertRuleOut(BaseModel):
+    """Rules are user configuration, created via the CLI — this schema
+    exists only to read back what's configured, never to create one
+    (this system's API surface is read-only everywhere else)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    rule_type: str
+    min_composite_score: float | None
+    convergence_labels: list[str] | None
+    is_active: bool
+
+
+class AlertOut(BaseModel):
+    """`source_event_ids` links back to the real evidence events behind
+    the triggering score — never a bare number without a why (spec's
+    anti-black-box requirement)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    rule_id: UUID
+    company_entity_id: UUID
+    alert_date: date
+    triggered_at: datetime
+    composite_score: float | None
+    signal_summary: str
+    source_event_ids: list[str]
 
 
 class CompanyOut(BaseModel):
@@ -424,10 +457,85 @@ class InstitutionalRadarEntryOut(BaseModel):
         )
 
 
+class ShortInterestEvidenceOut(BaseModel):
+    event_id: UUID
+    settlement_date: date
+    publication_time: datetime
+    current_short_position: Decimal
+    previous_short_position: Decimal | None
+    change_percent: Decimal | None
+    days_to_cover: Decimal | None
+    source_url: str | None
+
+
+class ShortInterestRadarEntryOut(BaseModel):
+    """Only rising short interest is scored — see
+    capint.scoring.short_interest_acceleration's module docstring for why
+    short covering (a falling cycle) never appears here."""
+
+    company_entity_id: UUID
+    company_name: str
+    ticker: str
+    as_of: datetime
+    composite_score: float | None
+    components: list[ScoreComponentOut]
+    confidence: float
+    confidence_notes: list[str]
+    latest_settlement_date: date
+    latest_change_percent: Decimal
+    latest_days_to_cover: Decimal | None
+    baseline_sample_size: int
+    baseline_percentile: float | None
+    baseline_z_score: float | None
+    consecutive_increasing_cycles: int
+    evidence: list[ShortInterestEvidenceOut]
+    explanation: list[str]
+
+    @classmethod
+    def from_score(cls, score: ShortInterestAccelerationScore) -> "ShortInterestRadarEntryOut":
+        return cls(
+            company_entity_id=score.company_entity_id,
+            company_name=score.company_name,
+            ticker=score.ticker,
+            as_of=score.as_of,
+            composite_score=score.composite_score,
+            components=[
+                ScoreComponentOut(name=c.name, value=c.value, weight=c.weight, explanation=c.explanation)
+                for c in score.components
+            ],
+            confidence=score.confidence,
+            confidence_notes=score.confidence_notes,
+            latest_settlement_date=score.latest_settlement_date,
+            latest_change_percent=score.latest_change_percent,
+            latest_days_to_cover=score.latest_days_to_cover,
+            baseline_sample_size=score.baseline_sample_size,
+            baseline_percentile=score.baseline_percentile,
+            baseline_z_score=score.baseline_z_score,
+            consecutive_increasing_cycles=score.consecutive_increasing_cycles,
+            evidence=[
+                ShortInterestEvidenceOut(
+                    event_id=e.event_id,
+                    settlement_date=e.settlement_date,
+                    publication_time=e.publication_time,
+                    current_short_position=e.current_short_position,
+                    previous_short_position=e.previous_short_position,
+                    change_percent=e.change_percent,
+                    days_to_cover=e.days_to_cover,
+                    source_url=e.source_url,
+                )
+                for e in score.evidence
+            ],
+            explanation=score.explanation,
+        )
+
+
 class ConvergenceEntryOut(BaseModel):
-    """Deliberately carries both scores side by side (or None), never a
-    single blended number — spec §33. See capint.convergence.engine's
-    module docstring for what this two-family check does and doesn't mean."""
+    """Deliberately carries every family's score side by side (or None),
+    never a single blended number — spec §33. See
+    capint.convergence.engine's module docstring for what this three-family
+    check does and doesn't mean — in particular, `label`/`label_explanation`
+    characterize only the insider/institutional relationship; they do not
+    yet incorporate `short_interest_score`."""
 
     company_entity_id: UUID
     company_name: str
@@ -437,6 +545,7 @@ class ConvergenceEntryOut(BaseModel):
     institutional_score: InstitutionalRadarEntryOut | None
     institutional_accumulating_institutions: int
     institutional_distributing_institutions: int
+    short_interest_score: ShortInterestRadarEntryOut | None
 
     @classmethod
     def from_entry(cls, entry: ConvergenceEntry) -> "ConvergenceEntryOut":
@@ -453,4 +562,9 @@ class ConvergenceEntryOut(BaseModel):
             ),
             institutional_accumulating_institutions=entry.institutional_accumulating_institutions,
             institutional_distributing_institutions=entry.institutional_distributing_institutions,
+            short_interest_score=(
+                ShortInterestRadarEntryOut.from_score(entry.short_interest_score)
+                if entry.short_interest_score
+                else None
+            ),
         )

@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from capint import temporal
 from capint.api.schemas import (
+    AlertOut,
+    AlertRuleOut,
     BeneficialOwnershipDisclosureOut,
     CapitalAllocationFactOut,
     CompanyOut,
@@ -21,11 +23,13 @@ from capint.api.schemas import (
     InstitutionalHoldingOut,
     InstitutionalRadarEntryOut,
     InstitutionOut,
+    ShortInterestRadarEntryOut,
     ShortInterestSnapshotOut,
     UKPersonWithSignificantControlOut,
 )
 from capint.convergence.engine import compute_convergence
 from capint.db import get_session
+from capint.models.alert import Alert, AlertRule
 from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
 from capint.models.crypto import CryptoTreasuryMovement
@@ -40,12 +44,14 @@ from capint.models.short_interest import ShortInterestSnapshot
 from capint.models.uk_psc import UKPersonWithSignificantControl
 from capint.radar.insider_radar import compute_insider_radar
 from capint.radar.institutional_radar import compute_institutional_radar
+from capint.radar.short_interest_radar import compute_short_interest_radar
 from capint.scoring.insider_conviction import DEFAULT_BASELINE_LOOKBACK_DAYS as INSIDER_DEFAULT_BASELINE_LOOKBACK_DAYS
 from capint.scoring.insider_conviction import DEFAULT_WINDOW_DAYS as INSIDER_DEFAULT_WINDOW_DAYS
 from capint.scoring.institutional_accumulation import (
     DEFAULT_BASELINE_LOOKBACK_DAYS as INSTITUTIONAL_DEFAULT_BASELINE_LOOKBACK_DAYS,
 )
 from capint.scoring.institutional_accumulation import DEFAULT_WINDOW_DAYS as INSTITUTIONAL_DEFAULT_WINDOW_DAYS
+from capint.scoring.short_interest_acceleration import DEFAULT_LOOKBACK_CYCLES as SHORT_INTEREST_DEFAULT_LOOKBACK_CYCLES
 
 app = FastAPI(title="Capital Intelligence OS", version="0.1.0")
 
@@ -575,18 +581,37 @@ def institutional_radar(
     return [InstitutionalRadarEntryOut.from_score(s) for s in scores]
 
 
+@app.get("/api/v1/radar/short-interest", response_model=list[ShortInterestRadarEntryOut])
+def short_interest_radar(
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    lookback_cycles: int = Query(default=SHORT_INTEREST_DEFAULT_LOOKBACK_CYCLES, ge=1, le=200),
+    top_n: int = Query(default=25, ge=1, le=500),
+    session: Session = Depends(get_session),
+) -> list[ShortInterestRadarEntryOut]:
+    """Companies with the strongest short-interest acceleration (Phase 13),
+    ranked by score. Only rising short interest is scored — see
+    capint.scoring.short_interest_acceleration for what "acceleration"
+    means here and why short covering never appears.
+    """
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    scores = compute_short_interest_radar(session, as_of=cutoff, lookback_cycles=lookback_cycles, top_n=top_n)
+    return [ShortInterestRadarEntryOut.from_score(s) for s in scores]
+
+
 @app.get("/api/v1/radar/convergence", response_model=list[ConvergenceEntryOut])
 def convergence_radar(
     as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
     insider_window_days: int = Query(default=INSIDER_DEFAULT_WINDOW_DAYS, ge=1, le=3650),
     institutional_window_days: int = Query(default=INSTITUTIONAL_DEFAULT_WINDOW_DAYS, ge=1, le=3650),
+    short_interest_lookback_cycles: int = Query(default=SHORT_INTEREST_DEFAULT_LOOKBACK_CYCLES, ge=1, le=200),
     top_n: int = Query(default=25, ge=1, le=500),
     session: Session = Depends(get_session),
 ) -> list[ConvergenceEntryOut]:
-    """Companies where independent insider and institutional signals agree
-    (or disagree) — a two-family down-scoped stand-in for the spec's full
-    Convergence Engine (§29). See capint.convergence.engine's module
-    docstring for exactly what that means and doesn't mean yet.
+    """Companies where independent insider, institutional, and short-
+    interest signals agree (or disagree) — a three-family down-scoped
+    stand-in for the spec's full Convergence Engine (§29). See
+    capint.convergence.engine's module docstring for exactly what that
+    means and doesn't mean yet.
     """
     cutoff = as_of or datetime.now(tz=None).astimezone()
     entries = compute_convergence(
@@ -594,9 +619,37 @@ def convergence_radar(
         as_of=cutoff,
         insider_window_days=insider_window_days,
         institutional_window_days=institutional_window_days,
+        short_interest_lookback_cycles=short_interest_lookback_cycles,
         top_n=top_n,
     )
     return [ConvergenceEntryOut.from_entry(e) for e in entries]
+
+
+@app.get("/api/v1/alert-rules", response_model=list[AlertRuleOut])
+def list_alert_rules(session: Session = Depends(get_session)) -> list[AlertRuleOut]:
+    """Configured alert rules (Phase 13). Rules are created via the CLI
+    (`create-alert-rule`), not this API — this endpoint is read-only, like
+    every other endpoint in this system."""
+    rules = session.execute(select(AlertRule)).scalars().all()
+    return [AlertRuleOut.model_validate(r) for r in rules]
+
+
+@app.get("/api/v1/alerts", response_model=list[AlertOut])
+def list_alerts(
+    rule_id: UUID | None = None,
+    company_entity_id: UUID | None = None,
+    session: Session = Depends(get_session),
+) -> list[AlertOut]:
+    """Persisted alerts (Phase 13, pipeline's ALERT stage), newest first.
+    Populated by running `evaluate-alerts` — see capint.alerting.engine
+    for how each rule type is evaluated against current signal output."""
+    stmt = select(Alert).order_by(Alert.triggered_at.desc())
+    if rule_id is not None:
+        stmt = stmt.where(Alert.rule_id == rule_id)
+    if company_entity_id is not None:
+        stmt = stmt.where(Alert.company_entity_id == company_entity_id)
+    alerts = session.execute(stmt).scalars().all()
+    return [AlertOut.model_validate(a) for a in alerts]
 
 
 @app.get("/health")
