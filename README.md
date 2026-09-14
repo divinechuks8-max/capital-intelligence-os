@@ -4,10 +4,19 @@
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![license](https://img.shields.io/badge/license-unlicensed-lightgrey)
 
-Public-market intelligence and capital-flow research platform. See project
-notes for the full multi-phase spec; this repo currently implements the
-Phase 1 foundation only: entity resolution, event/provenance modeling, and
-point-in-time (temporal) correctness.
+Public-market intelligence and capital-flow research platform. Ingests real
+disclosure and market data from SEC EDGAR (Form 4, 13F, Schedule 13D/13G,
+XBRL financials, Form N-PORT), FINRA, UK Companies House, Cboe, the GDELT
+Project, and Bitcoin's public blockchain; computes point-in-time-correct
+insider/institutional/short-interest signals and a three-family convergence
+check; and layers on a relationship graph, historical backtesting, webhook
+alert delivery, a read-only dashboard, and a Docker/Postgres deployment
+path. Built incrementally across 18 phases on top of the Phase 1 foundation
+(entity resolution, event/provenance modeling, point-in-time correctness) —
+see this README's "Known limitations (Phase N)" sections throughout for
+exactly what each phase does and doesn't cover, including two real
+compliance findings that led to removing already-shipped data sources
+(Phase 15).
 
 Uses public data only. Nothing here obtains, infers from, or facilitates
 trading on material non-public information. Outputs are research/decision
