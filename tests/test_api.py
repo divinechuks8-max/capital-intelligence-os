@@ -408,6 +408,38 @@ def test_analyst_recommendations_endpoint(session):
     assert none_filtered == []
 
 
+def test_interlocking_directorates_endpoint(session):
+    from capint.ingestion.sec_form4 import upsert_person_company_role
+
+    person = make_person(session, name="J. Interlocked (SYNTHETIC)")
+    company_a = make_company(session, name="Company A (SYNTHETIC)")
+    company_b = make_company(session, name="Company B (SYNTHETIC)")
+
+    upsert_person_company_role(
+        session, person, company_a, is_officer=True, is_director=False, is_ten_percent_owner=False, role_title="CEO"
+    )
+    upsert_person_company_role(
+        session, person, company_b, is_officer=False, is_director=True, is_ten_percent_owner=False, role_title="Director"
+    )
+    session.commit()
+
+    client = next(make_client(session))
+
+    results = client.get("/api/v1/relationships/interlocking-directorates").json()
+    assert len(results) == 1
+    assert results[0]["person_name"] == "J. Interlocked (SYNTHETIC)"
+
+    filtered = client.get(
+        "/api/v1/relationships/interlocking-directorates", params={"company_entity_id": str(company_a.entity_id)}
+    ).json()
+    assert len(filtered) == 1
+
+    none_filtered = client.get(
+        "/api/v1/relationships/interlocking-directorates", params={"company_entity_id": str(make_company(session, name="Unrelated Co (SYNTHETIC)").entity_id)}
+    ).json()
+    assert none_filtered == []
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

@@ -233,6 +233,23 @@ class AnalystRecommendationTrendOut(BaseModel):
     strong_sell: int
 
 
+class InterlockingDirectorateOut(BaseModel):
+    """A Person holding a role at both companies, derived from real Form 4
+    PersonCompanyRole data — not a new external data source. See
+    capint.relationships.engine's module docstring for why only this
+    relationship type is built (no common-institutional-ownership or
+    supply-chain relationships yet)."""
+
+    company_a_entity_id: UUID
+    company_a_name: str
+    company_b_entity_id: UUID
+    company_b_name: str
+    person_entity_id: UUID
+    person_name: str
+    role_at_company_a: str | None
+    role_at_company_b: str | None
+
+
 class AlertRuleOut(BaseModel):
     """Rules are user configuration, created via the CLI — this schema
     exists only to read back what's configured, never to create one

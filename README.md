@@ -423,6 +423,27 @@ redistribution — the same problem as Alpha Vantage's price data (see
 "Known limitations (Phase 15)"). The model and this read-only endpoint
 remain real, tested, working code, ready for a compliant source.
 
+## Relationships (interlocking directorates)
+
+```
+GET /api/v1/relationships/interlocking-directorates?company_entity_id=...
+```
+
+The pipeline's RELATIONSHIPS layer (Phase 15) — companies connected by a
+shared Person holding an officer/director/10%-owner role at both,
+derived entirely from real Form 4 data already in this system (Phase 2).
+No new external data source, and so no new licensing risk. Omit
+`company_entity_id` for the full graph currently in this system; pass it
+to scope to one company's interlocks. Computed on demand, like the radar/
+convergence endpoints, not persisted or point-in-time gated — see
+`src/capint/relationships/engine.py`'s module docstring for why (Form 4
+doesn't disclose when a role formally ends) and for why a "common
+institutional ownership" relationship type was considered and
+deliberately not built (a large index-fund holder connects nearly every
+public company to nearly every other one — noise, not a meaningful
+relationship, without a materiality threshold this increment doesn't
+build).
+
 ## Test
 
 ```bash
@@ -1205,3 +1226,36 @@ platform's architecture.**
 - The rest of Phase 15 (news/sentiment, relationship graph, crypto
   expansion) was not yet started as of this remediation — it resumes
   from here.
+
+**Relationship graph (interlocking directorates) — complete.** The first
+of the three original parts to resume after the remediation above, and
+deliberately the one requiring no new external data source at all (no new
+licensing risk to evaluate).
+
+- **Only interlocking directorates are built** — see
+  `src/capint/relationships/engine.py`'s module docstring for why a
+  "common institutional ownership" relationship type was considered and
+  rejected (a large index-fund holder would connect nearly every public
+  company to nearly every other one, without a materiality threshold this
+  increment doesn't build), and why `EntityType`'s SUPPLIER/CUSTOMER/
+  COMPETITOR values remain unused (no structured, machine-readable
+  supply-chain disclosure source exists in this system — SEC XBRL
+  customer-concentration disclosures are unstructured footnote text).
+- **No point-in-time gating** — Form 4 doesn't disclose when an officer/
+  director role formally ends, so there's no genuine cutoff to gate an
+  `as_of` parameter on (same reasoning as Phase 14's volatility-index and
+  analyst-trend endpoints).
+- **Computed on demand, not persisted** — a live view over current
+  PersonCompanyRole data, same pattern as the radar/convergence
+  endpoints, avoiding a stale-cache problem as new Form 4 data streams
+  in.
+- Tested against the real production entity-resolution code path
+  (`capint.ingestion.sec_form4.upsert_person_company_role`), not a
+  separate synthetic shortcut — covering pairing, company-scoped
+  filtering, and the 3-company case (C(3,2)=3 pairs). Live-validated
+  against real Form 4 data end to end: ingested 111 real transactions
+  from 50 real recent filings and confirmed the endpoint correctly
+  returns zero interlocks for that sample (the honest answer — board
+  interlocks are real but relatively rare in any small random sample;
+  the underlying Form 4 PersonCompanyRole data itself was already
+  live-validated in Phase 2).

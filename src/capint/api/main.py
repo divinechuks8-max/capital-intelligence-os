@@ -26,6 +26,7 @@ from capint.api.schemas import (
     InstitutionalHoldingOut,
     InstitutionalRadarEntryOut,
     InstitutionOut,
+    InterlockingDirectorateOut,
     ShortInterestRadarEntryOut,
     ShortInterestSnapshotOut,
     UKPersonWithSignificantControlOut,
@@ -34,6 +35,7 @@ from capint.api.schemas import (
 from capint.convergence.engine import compute_convergence
 from capint.db import get_session
 from capint.backtesting.engine import DEFAULT_HOLDING_TRADING_DAYS, backtest_rising_short_interest_cycles
+from capint.relationships.engine import compute_interlocking_directorates
 from capint.models.alert import Alert, AlertRule
 from capint.models.analyst import AnalystRecommendationTrend
 from capint.models.capital_allocation import CapitalAllocationFact
@@ -615,6 +617,32 @@ def list_analyst_recommendation_trends(
         stmt = stmt.where(AnalystRecommendationTrend.ticker == ticker.upper())
     trends = session.execute(stmt).scalars().all()
     return [AnalystRecommendationTrendOut.model_validate(t) for t in trends]
+
+
+@app.get("/api/v1/relationships/interlocking-directorates", response_model=list[InterlockingDirectorateOut])
+def list_interlocking_directorates(
+    company_entity_id: UUID | None = None,
+    session: Session = Depends(get_session),
+) -> list[InterlockingDirectorateOut]:
+    """Companies connected by a shared Person holding a role at both
+    (Phase 15, pipeline's RELATIONSHIPS layer) — derived entirely from
+    real Form 4 PersonCompanyRole data already in this system, not a new
+    external data source. See capint.relationships.engine's module
+    docstring for why only this relationship type is built."""
+    results = compute_interlocking_directorates(session, company_entity_id=company_entity_id)
+    return [
+        InterlockingDirectorateOut(
+            company_a_entity_id=r.company_a_entity_id,
+            company_a_name=r.company_a_name,
+            company_b_entity_id=r.company_b_entity_id,
+            company_b_name=r.company_b_name,
+            person_entity_id=r.person_entity_id,
+            person_name=r.person_name,
+            role_at_company_a=r.role_at_company_a,
+            role_at_company_b=r.role_at_company_b,
+        )
+        for r in results
+    ]
 
 
 @app.get("/api/v1/radar/insider", response_model=list[InsiderRadarEntryOut])
