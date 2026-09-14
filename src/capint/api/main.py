@@ -1,11 +1,14 @@
+import logging
 from datetime import datetime
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from capint import temporal
+from capint.config import settings
 from capint.api.schemas import (
     AlertOut,
     AlertRuleOut,
@@ -64,6 +67,8 @@ from capint.scoring.institutional_accumulation import (
 )
 from capint.scoring.institutional_accumulation import DEFAULT_WINDOW_DAYS as INSTITUTIONAL_DEFAULT_WINDOW_DAYS
 from capint.scoring.short_interest_acceleration import DEFAULT_LOOKBACK_CYCLES as SHORT_INTEREST_DEFAULT_LOOKBACK_CYCLES
+
+logging.basicConfig(level=settings.log_level)
 
 app = FastAPI(title="Capital Intelligence OS", version="0.1.0")
 
@@ -834,5 +839,18 @@ def backtest_short_interest_endpoint(
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health(session: Session = Depends(get_session)) -> dict[str, str]:
+    """Liveness AND basic readiness (Phase 18) — deliberately one endpoint,
+    not split into separate `/health/live` and `/health/ready` the way a
+    Kubernetes deployment typically would: this system has no orchestrator
+    wired up yet to make that distinction meaningful (see "Known
+    limitations (Phase 18)"). Confirms the configured database is actually
+    reachable, not just that the process is running — a process that's
+    "alive" but can't reach its database is not usable, and a load
+    balancer / container orchestrator should be told so via a non-200
+    response, not a misleadingly green check."""
+    try:
+        session.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail=f"database unreachable: {exc!r}") from exc
     return {"status": "ok"}

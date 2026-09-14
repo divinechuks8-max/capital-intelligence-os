@@ -32,6 +32,54 @@ SQLite engine (see `tests/conftest.py`).
 uvicorn capint.api.main:app --reload
 ```
 
+`--reload` is a dev-only hot-reload flag (file-watcher, extra overhead) —
+see "Deployment" below for how to run this in production.
+
+## Deployment
+
+```bash
+docker compose up --build          # starts a real Postgres + this API
+docker compose run --rm api alembic upgrade head   # apply migrations (separate, explicit step)
+docker compose run --rm api python -m capint.cli ingest-form4 --count 50   # any CLI command works the same way
+```
+
+One image (`Dockerfile`) runs both the read-only API and the ingestion
+CLI — they're the same codebase, just a different `CMD`. `docker-compose.yml`
+wires it to a real `postgres:16-alpine` (not this project's `dev.db`
+SQLite convenience) so this is a genuinely close-to-production stack, not
+just a dev-server wrapper.
+
+Concrete things Phase 18 actually did, beyond the Docker files themselves:
+
+- **`GET /health` now checks real database connectivity** (a lightweight
+  `SELECT 1`), not just "the process is running" — returns `503` with a
+  `database unreachable` detail if the configured database can't be
+  reached, so a load balancer/orchestrator can act on it instead of
+  routing traffic to an instance that's up but can't actually serve
+  anything.
+- **`pool_pre_ping=True`** on the SQLAlchemy engine
+  (`src/capint/db.py`) — detects a pooled connection that's gone stale
+  (DB restart, an idle-timing-out proxy/firewall between this service and
+  Postgres) and transparently reconnects, instead of surfacing an opaque
+  "server closed the connection unexpectedly" on the next request that
+  happens to draw the dead connection.
+- **`LOG_LEVEL` is now actually wired up** (`logging.basicConfig` in
+  `src/capint/api/main.py`) — this setting has existed in
+  `src/capint/config.py`/`.env.example` since early in this project but
+  had no effect on anything until now.
+
+Migrations are deliberately a separate, explicit step (`docker compose
+run --rm api alembic upgrade head`), not something the API container
+runs automatically on startup — the standard reason: if this service is
+ever scaled to more than one replica, auto-running migrations from every
+container's own startup hook is a race condition (two containers trying
+to apply the same migration concurrently) waiting to happen. Run it once,
+as part of a deploy, before the new API version starts receiving traffic.
+
+**Everything above was live-validated in this environment except the
+container runtime itself** — see "Known limitations (Phase 18)" for
+exactly what that means and why.
+
 ## Ingest real SEC Form 4 filings
 
 Requires `SEC_EDGAR_USER_AGENT` in `.env` (an identifying "org/name contact@email",
@@ -1545,3 +1593,61 @@ phase, all live-validated against real, currently-flowing data:**
   — an honest limitation of what "live-validated" can mean when the
   underlying real-world signal hasn't occurred yet in the data ingested
   so far.
+
+## Known limitations (Phase 18)
+
+Phase 18 (the final phase of the original roadmap) is deployment/
+production readiness: making this system actually runnable somewhere
+other than a local dev machine against `dev.db`, not adding new research
+features. See "Deployment" above for what was built.
+
+**A real, environment-imposed limitation on how this was validated,
+stated honestly rather than glossed over**: this development environment
+has no Docker daemon and no local Postgres server available, so `docker
+build`/`docker compose up` were never actually run — the `Dockerfile`
+and `docker-compose.yml` were written and reviewed, but not executed.
+This project's discipline everywhere else has been "live-validate
+against real data before claiming something works," and this phase
+couldn't fully meet that bar for the container runtime itself. What
+*was* actually run, for real, to close as much of that gap as the
+environment allowed:
+
+- `pip install --no-cache-dir -r requirements.txt` — the exact command
+  the Dockerfile's dependency layer runs — executed for real in a
+  completely fresh virtual environment, confirming the dependency set
+  resolves and installs cleanly with no version conflicts.
+- The application was then actually booted from that fresh environment
+  using the Dockerfile's exact `PYTHONPATH=src` convention and its exact
+  `CMD` (`uvicorn capint.api.main:app --host ... --port ...`, not just
+  `TestClient`), and real HTTP requests were sent to it over a real
+  socket: `GET /health` returned a real `200 {"status": "ok"}` against
+  real `dev.db` data, and `GET /api/v1/companies` returned real company
+  rows over HTTP.
+- `docker-compose.yml`'s YAML was parsed and its resolved structure
+  inspected to catch schema mistakes, though this obviously can't catch
+  a runtime networking or image-build problem the way `docker compose
+  up` itself would.
+- What this could *not* validate: the actual container build (base image
+  availability, layer caching, image size), the actual container
+  runtime (networking between the `api` and `db` services, volume
+  persistence, the Postgres healthcheck gating `depends_on`), or a real
+  connection from this codebase to a real Postgres server — every
+  Postgres-specific code path in this project (the dialect-aware enum
+  migrations since Phase 7, `psycopg2` itself) has only ever run against
+  SQLite in this environment. **Before relying on this in an actual
+  deployment, run `docker compose up --build` somewhere Docker is
+  available and confirm it end to end** — this README doesn't claim
+  that step was done for you.
+- `pool_pre_ping`'s actual reconnect behavior (as opposed to the flag
+  being set — which *was* confirmed via `engine.pool._pre_ping`) only
+  manifests when a real network connection to a real server goes stale,
+  which isn't reproducible against SQLite. The `/health` failure path
+  (a database that's unreachable at all) was live-tested for real,
+  against a real broken connection string, and correctly returns `503`.
+- **No CI pipeline, no secrets manager integration, no TLS
+  termination guidance, no horizontal-scaling/load-balancer
+  configuration, no backup/restore procedure for the Postgres volume.**
+  All real, standard parts of "production readiness" that this increment
+  deliberately didn't take on — `docker-compose.yml`'s own header comment
+  says so. Scoped to "can this run in a container against a real
+  database, with an honest health check," not a complete SRE playbook.

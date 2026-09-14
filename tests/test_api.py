@@ -19,6 +19,27 @@ def test_health(session):
     assert resp.json() == {"status": "ok"}
 
 
+def test_health_reports_503_when_database_unreachable():
+    """Phase 18: /health must reflect real database reachability, not just
+    process liveness — a broken DB connection should surface as a non-200
+    response a load balancer/orchestrator can act on."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    broken_engine = create_engine("sqlite:///./__no_such_dir_xyz__/unreachable.db", future=True)
+    broken_session = sessionmaker(bind=broken_engine)()
+
+    app.dependency_overrides[get_session] = lambda: broken_session
+    client = TestClient(app)
+    try:
+        resp = client.get("/health")
+        assert resp.status_code == 503
+        assert "database unreachable" in resp.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+        broken_session.close()
+
+
 def test_list_companies_and_point_in_time_events(session):
     source = make_sec_source(session)
     company = make_company(session)

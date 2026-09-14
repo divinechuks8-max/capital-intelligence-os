@@ -1,0 +1,45 @@
+# Phase 18: local, close-to-production stack — real Postgres, not SQLite
+# (this project's dev.db convenience). Not a Kubernetes/production
+# manifest; see README "Deployment" section for what's out of scope here
+# and what a real deployment still needs to decide (orchestrator, secrets
+# manager, TLS termination, backups).
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: capint
+      POSTGRES_PASSWORD: capint
+      POSTGRES_DB: capint
+    ports:
+      - "5432:5432"
+    volumes:
+      - capint_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U capint"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    # SEC_EDGAR_USER_AGENT / COMPANIES_HOUSE_API_KEY (needed only for the
+    # ingestion CLI, not the read-only API) come from your own .env, which
+    # is gitignored and never baked into the image. DATABASE_URL/
+    # ENVIRONMENT/LOG_LEVEL are overridden below regardless of what .env
+    # says, since inside this compose network the database is reachable
+    # at "db", not "localhost" — Compose's `environment:` takes precedence
+    # over same-named keys from `env_file:`.
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://capint:capint@db:5432/capint
+      ENVIRONMENT: production
+      LOG_LEVEL: INFO
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  capint_pgdata:
