@@ -441,6 +441,13 @@ the same way (`--index-code VVIX`, `--index-code SKEW`, ...). Not tied to
 any Company/Entity — see `src/capint/models/volatility.py`'s module
 docstring for why.
 
+`as_of` (Phase 17) point-in-time gates on `created_at` — *ingestion*
+time, not the index's own `trade_date` — since a daily index level has
+no separate "publication" moment to gate on the way a disclosure does.
+See "Known limitations (Phase 17)" for exactly what this does and
+doesn't guarantee, and `src/capint/temporal.py`'s module docstring for
+the general as_of_public/as_of_ingested distinction this follows.
+
 ## Analyst recommendation trends
 
 ```
@@ -453,12 +460,16 @@ accessible; Phase 15 removed it after reading Finnhub's actual Terms of
 Service, which restrict the free tier to personal use and prohibit
 redistribution — the same problem as Alpha Vantage's price data (see
 "Known limitations (Phase 15)"). The model and this read-only endpoint
-remain real, tested, working code, ready for a compliant source.
+remain real, tested, working code, ready for a compliant source. Still
+not point-in-time gated (no `as_of` parameter): unlike the volatility-
+index/news-sentiment endpoints, this table has no ingestion path at all
+right now to gate an ingestion-time cutoff against — see "Known
+limitations (Phase 17)".
 
 ## Relationships (interlocking directorates)
 
 ```
-GET /api/v1/relationships/interlocking-directorates?company_entity_id=...
+GET /api/v1/relationships/interlocking-directorates?company_entity_id=...&as_of=...
 ```
 
 The pipeline's RELATIONSHIPS layer (Phase 15) — companies connected by a
@@ -467,14 +478,24 @@ derived entirely from real Form 4 data already in this system (Phase 2).
 No new external data source, and so no new licensing risk. Omit
 `company_entity_id` for the full graph currently in this system; pass it
 to scope to one company's interlocks. Computed on demand, like the radar/
-convergence endpoints, not persisted or point-in-time gated — see
-`src/capint/relationships/engine.py`'s module docstring for why (Form 4
-doesn't disclose when a role formally ends) and for why a "common
-institutional ownership" relationship type was considered and
+convergence endpoints, not persisted — see
+`src/capint/relationships/engine.py`'s module docstring for why a
+"common institutional ownership" relationship type was considered and
 deliberately not built (a large index-fund holder connects nearly every
 public company to nearly every other one — noise, not a meaningful
 relationship, without a materiality threshold this increment doesn't
 build).
+
+`as_of` (Phase 17) point-in-time gates on each role's `start_date` — the
+earliest Form 4 transaction that disclosed it, backfilled for every
+pre-existing role and populated going forward by
+`capint.ingestion.sec_form4.upsert_person_company_role`. A genuine but
+asymmetric gate: it correctly excludes a role not yet disclosed by
+`as_of` (no look-ahead), but can never exclude one that has, in reality,
+already ended by `as_of` — Form 4 never discloses role terminations. See
+"Known limitations (Phase 17)" and
+`src/capint/models/person.py`'s `PersonCompanyRole` docstring for the
+full reasoning.
 
 ## News sentiment
 
@@ -485,7 +506,7 @@ python -m capint.cli ingest-news-sentiment --ticker AAPL --query "Apple Inc" --t
 ```
 
 ```
-GET /api/v1/news-sentiment?company_entity_id=...
+GET /api/v1/news-sentiment?company_entity_id=...&as_of=...
 ```
 
 Real news-tone (sentiment) distributions from the GDELT Project's free
@@ -503,6 +524,11 @@ concept of "company"**, only full-text search over global news — treat
 this as directional sentiment context, not a precise per-company signal.
 `tone_distribution` is the raw bin/count histogram GDELT returns, never
 collapsed to a single opaque score.
+
+`as_of` (Phase 17) point-in-time gates on `retrieved_at` — *ingestion*
+time (when this system ran the search), not any individual article's
+publication timestamp, since a search snapshot has no genuine per-fact
+disclosure moment to gate on. See "Known limitations (Phase 17)".
 
 ## Test
 
@@ -1169,6 +1195,9 @@ analyst estimates/ratings. All three are complete.
 - Validated end to end: ingested the complete real VIX history (9,271
   real trading days, 1990-01-02 to 2026-09-11) live from the Cboe CDN;
   idempotent re-ingestion confirmed.
+- **Update (Phase 17): `GET /api/v1/volatility-index` gained an `as_of`
+  parameter**, gating on ingestion time (`created_at`), not `trade_date`
+  — see "Known limitations (Phase 17)".
 
 **Analyst estimates/ratings (Finnhub):**
 
@@ -1302,10 +1331,13 @@ licensing risk to evaluate).
   COMPETITOR values remain unused (no structured, machine-readable
   supply-chain disclosure source exists in this system — SEC XBRL
   customer-concentration disclosures are unstructured footnote text).
-- **No point-in-time gating** — Form 4 doesn't disclose when an officer/
-  director role formally ends, so there's no genuine cutoff to gate an
-  `as_of` parameter on (same reasoning as Phase 14's volatility-index and
-  analyst-trend endpoints).
+- **No point-in-time gating at the time this phase shipped** — Form 4
+  doesn't disclose when an officer/director role formally ends, so there
+  was no genuine cutoff to gate an `as_of` parameter on. **Phase 17
+  added a genuine, if asymmetric, `as_of` gate** on each role's
+  `start_date` (the earliest disclosing Form 4 transaction) — see "Known
+  limitations (Phase 17)" for exactly what that does and doesn't
+  guarantee; `end_date` remains unused for the reason stated here.
 - **Computed on demand, not persisted** — a live view over current
   PersonCompanyRole data, same pattern as the radar/convergence
   endpoints, avoiding a stale-cache problem as new Form 4 data streams
@@ -1354,8 +1386,12 @@ opposite result from every commercial vendor checked this phase.
   dedupes against a natural per-fact key. Re-running the same ticker/
   query/timespan creates a new snapshot rather than being treated as a
   duplicate.
-- **No point-in-time gating** (no `as_of`) — `retrieved_at` is when this
-  system ran the search, not a filing/disclosure timestamp.
+- **No point-in-time gating at the time this phase shipped** —
+  `retrieved_at` is when this system ran the search, not a filing/
+  disclosure timestamp. **Phase 17 added `as_of` gating on
+  `retrieved_at`** — deliberately *ingestion*-time semantics, not a
+  claim about when any given article was publicly known; see "Known
+  limitations (Phase 17)".
 - **A real, hard rate limit**: GDELT asks for no more than one request
   every 5 seconds — confirmed live via an actual HTTP 429 with that exact
   guidance when requests came faster — which is why this adapter (unlike
@@ -1417,3 +1453,95 @@ and design writeup; this section covers what's deliberately not built.
   `GET /api/v1/alert-rules` never serves back the raw `webhook_url` (only
   a `webhook_configured` boolean and `webhook_format`), and
   `GET /api/v1/alerts` serves the three new delivery fields correctly.
+
+## Known limitations (Phase 17)
+
+Phase 17 is point-in-time / `as_of` query hardening — systematically
+revisiting the "no point-in-time gating" gaps this README has flagged
+across Phases 14 and 15 (volatility index, analyst recommendation
+trends, interlocking directorates, news sentiment), rather than adding
+new feature surface. This was chosen deliberately: the project's
+existing correctness discipline (spec's "never a bare number without a
+why," and `src/capint/temporal.py`'s strict as_of_public/as_of_ingested
+distinction for Event-based data) already applied cleanly to the
+radar/convergence/backtesting/alerting modules, which all gate correctly
+on `Event.publication_time`; four other endpoints didn't have an `as_of`
+parameter at all. A scoping survey (not just a "let's add the parameter
+everywhere" pass) found these fall into two genuinely different
+categories, and this phase treats them differently rather than
+fabricating a uniform answer:
+
+**Genuinely no source data to gate on — left as-is, not touched:**
+
+- `AnalystRecommendationTrend` — a monthly aggregate bucket with no
+  disclosure timestamp, and (separately) no working ingestion path since
+  Phase 15's Finnhub removal, so there's nothing real to gate against or
+  live-validate even if a parameter were added. Adding one anyway,
+  against an empty table, would violate this project's practice of never
+  shipping something that can't be validated against real data.
+- `PriceBar` — same reasoning (no disclosure timestamp; a price bar is
+  continuously observable market data with no single "publication"
+  moment) and the same Phase 15 ingestion-path gap (Alpha Vantage
+  removed). `capint.backtesting.engine` already enforces its own
+  no-look-ahead discipline on top of whatever `PriceBar` data exists
+  (entry price is the first bar on/after the signal date, never before)
+  — that was correct before this phase and needed no change.
+
+**Genuine gaps that were closeable, and were closed — added `as_of` this
+phase, all live-validated against real, currently-flowing data:**
+
+- **`GET /api/v1/volatility-index`** — `as_of` gates on
+  `VolatilityIndexLevel.created_at` (ingestion time), not `trade_date`.
+  This is deliberately the *as_of_ingested* semantic
+  (`src/capint/temporal.py`'s second, distinct convention for Event
+  data), not *as_of_public* — Cboe publishes same-day and there's no
+  separate disclosure moment to gate on, so ingestion time is the most
+  honest cutoff available, clearly labeled as such rather than presented
+  as a "public knowledge" cutoff it isn't. Live-validated: real VIX
+  history (9,271 real rows) correctly included at a far-future `as_of`,
+  correctly empty at a cutoff before real ingestion happened, and
+  correctly included/excluded across the exact real ingestion timestamp
+  (down to the second).
+- **`GET /api/v1/news-sentiment`** — `as_of` gates on
+  `NewsSentimentSnapshot.retrieved_at`, the same ingestion-time semantic,
+  for the same reason: `retrieved_at` is when this system ran the GDELT
+  search, never an individual article's publication timestamp, so this
+  can only honestly answer "was this snapshot already pulled by as_of,"
+  never "was this coverage publicly known by as_of." Live-validated
+  against the one real GDELT snapshot already in this system.
+- **`GET /api/v1/relationships/interlocking-directorates`** — the one
+  genuine *as_of_public*-style addition this phase, not ingestion-time:
+  `PersonCompanyRole.start_date` (a column that existed since Phase 2 but
+  was never populated) is now set to the earliest Form 4 transaction's
+  `publication_time` disclosing that (person, company) pair — see
+  `capint.ingestion.sec_form4.upsert_person_company_role`, which
+  tightens it to the true minimum across every transaction ever seen for
+  that pair, never just the most recent. `compute_interlocking_directorates(as_of=...)`
+  then filters on it. **A genuine but asymmetric gate**: it correctly
+  excludes a role not yet publicly disclosed by `as_of` (no look-ahead
+  bias), but can never exclude a role that has, in reality, already
+  ended by `as_of` — Form 4 doesn't disclose role terminations, so
+  `end_date` stays unpopulated and unused, honestly, rather than
+  guessed. A role with no `start_date` (only possible for a row created
+  by a caller that never passes `first_evidence_time`, e.g. a test) is
+  excluded from any `as_of`-gated query, on the same "can't defend an
+  unevidenced claim" principle applied everywhere else in this system.
+  A one-time data migration (`3d9d243b9c84`) backfilled `start_date` for
+  every pre-existing role from the same evidence rule. `role_a_start_date`/
+  `role_b_start_date` are now included in every response — the evidence
+  an `as_of`-gated result was filtered against, never a bare inclusion
+  without a why. Live-validated against real data: the backfill migration
+  set real `start_date` values (e.g. 2026-09-11) for all 50 real
+  pre-existing roles from Phase 15's Form 4 ingestion; a further live
+  ingestion of 40 more real Form 4 transactions confirmed the ingestion
+  path populates `start_date` going forward too (90/90 roles now have
+  one). The real interlock graph is still empty at this system's current
+  ingestion scale (consistent with Phase 15's own honest finding — board
+  interlocks are real but rare in a small sample), so the `as_of` gate's
+  filtering behavior itself was validated via targeted unit tests with
+  synthetic evidence dates (a role disclosed after the cutoff is
+  correctly excluded; the same role becomes visible once `as_of` moves
+  past its disclosure date) rather than against a real positive example
+  — an honest limitation of what "live-validated" can mean when the
+  underlying real-world signal hasn't occurred yet in the data ingested
+  so far.

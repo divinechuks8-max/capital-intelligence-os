@@ -22,7 +22,28 @@ class Person(Base):
 class PersonCompanyRole(UUIDPKMixin, CreatedAtMixin, Base):
     """A person's role at a company over a time window — needed to classify
     insider transactions (officer/director/10% owner, per Form 3/4/5) and to
-    build the insider network graph later (spec §11, §45)."""
+    build the insider network graph later (spec §11, §45).
+
+    **`start_date` (Phase 17)**: set to the *earliest* Form 4 transaction's
+    disclosure date (`Event.publication_time`, not `event_time` — see
+    capint.temporal's module docstring for why) seen for this
+    (person, company) pair — see
+    capint.ingestion.sec_form4.upsert_person_company_role. This is an
+    honest upper bound on when the role began, not the true start date: a
+    person may have held the role earlier without a Form 4 transaction to
+    evidence it (e.g. appointed but made no reportable trade for months).
+    It's still a real, defensible point-in-time gate for
+    capint.relationships.engine.compute_interlocking_directorates — "was
+    this role publicly evidenced by `as_of`" — never a look-ahead, since a
+    role can only ever be known no earlier than its first evidence.
+
+    **`end_date` stays unused, genuinely** — Form 4 never discloses when
+    an officer/director/10%-owner status ends, so there is no source data
+    to populate it from, and this system does not fabricate one. A
+    consequence: point-in-time interlocking-directorate queries can never
+    exclude a role that has, in reality, since ended — only include roles
+    that hadn't yet started as of `as_of`.
+    """
 
     __tablename__ = "person_company_roles"
 

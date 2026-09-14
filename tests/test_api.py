@@ -381,6 +381,12 @@ def test_volatility_index_endpoint(session):
     none_filtered = client.get("/api/v1/volatility-index", params={"index_code": "ZZZZNOTAREAL"}).json()
     assert none_filtered == []
 
+    # as_of (Phase 17) gates on ingestion time (created_at), not trade_date.
+    future = client.get("/api/v1/volatility-index", params={"as_of": "2099-01-01T00:00:00Z"}).json()
+    assert len(future) == 10
+    past = client.get("/api/v1/volatility-index", params={"as_of": "2000-01-01T00:00:00Z"}).json()
+    assert past == []
+
 
 def test_analyst_recommendations_endpoint(session):
     """No ingestion path currently populates AnalystRecommendationTrend —
@@ -422,10 +428,12 @@ def test_interlocking_directorates_endpoint(session):
     company_b = make_company(session, name="Company B (SYNTHETIC)")
 
     upsert_person_company_role(
-        session, person, company_a, is_officer=True, is_director=False, is_ten_percent_owner=False, role_title="CEO"
+        session, person, company_a, is_officer=True, is_director=False, is_ten_percent_owner=False, role_title="CEO",
+        first_evidence_time=dt(2026, 5, 1),
     )
     upsert_person_company_role(
-        session, person, company_b, is_officer=False, is_director=True, is_ten_percent_owner=False, role_title="Director"
+        session, person, company_b, is_officer=False, is_director=True, is_ten_percent_owner=False, role_title="Director",
+        first_evidence_time=dt(2026, 5, 1),
     )
     session.commit()
 
@@ -434,6 +442,8 @@ def test_interlocking_directorates_endpoint(session):
     results = client.get("/api/v1/relationships/interlocking-directorates").json()
     assert len(results) == 1
     assert results[0]["person_name"] == "J. Interlocked (SYNTHETIC)"
+    assert results[0]["role_a_start_date"] == "2026-05-01"
+    assert results[0]["role_b_start_date"] == "2026-05-01"
 
     filtered = client.get(
         "/api/v1/relationships/interlocking-directorates", params={"company_entity_id": str(company_a.entity_id)}
@@ -444,6 +454,16 @@ def test_interlocking_directorates_endpoint(session):
         "/api/v1/relationships/interlocking-directorates", params={"company_entity_id": str(make_company(session, name="Unrelated Co (SYNTHETIC)").entity_id)}
     ).json()
     assert none_filtered == []
+
+    # as_of (Phase 17) gates on each role's start_date (earliest Form 4 disclosure).
+    future = client.get(
+        "/api/v1/relationships/interlocking-directorates", params={"as_of": "2099-01-01T00:00:00Z"}
+    ).json()
+    assert len(future) == 1
+    past = client.get(
+        "/api/v1/relationships/interlocking-directorates", params={"as_of": "2000-01-01T00:00:00Z"}
+    ).json()
+    assert past == []
 
 
 def test_news_sentiment_endpoint(session):
@@ -466,6 +486,12 @@ def test_news_sentiment_endpoint(session):
     company_entity_id = snapshots[0]["company_entity_id"]
     filtered = client.get("/api/v1/news-sentiment", params={"company_entity_id": company_entity_id}).json()
     assert len(filtered) == 1
+
+    # as_of (Phase 17) gates on ingestion time (retrieved_at), not article publication time.
+    future = client.get("/api/v1/news-sentiment", params={"as_of": "2099-01-01T00:00:00Z"}).json()
+    assert len(future) == 1
+    past = client.get("/api/v1/news-sentiment", params={"as_of": "2000-01-01T00:00:00Z"}).json()
+    assert past == []
 
 
 def test_ownership_disclosures_endpoint(session):

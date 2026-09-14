@@ -583,20 +583,27 @@ def list_corporate_action_disclosures(
 @app.get("/api/v1/volatility-index", response_model=list[VolatilityIndexLevelOut])
 def list_volatility_index_levels(
     index_code: str = "VIX",
+    as_of: datetime | None = Query(
+        default=None,
+        description="Ingestion-time cutoff (VolatilityIndexLevel.created_at) — what this platform had "
+        "ingested by as_of, NOT a disclosure/publication cutoff. See endpoint docstring.",
+    ),
     session: Session = Depends(get_session),
 ) -> list[VolatilityIndexLevelOut]:
     """Daily Cboe volatility index history (Phase 14, options/derivatives
-    extension) — VIX by default. Not point-in-time gated like every other
-    endpoint here (no `as_of` parameter): unlike a disclosure, an index
-    level has no separate "publication" moment distinct from its own
-    trade date, and Cboe publishes it same-day. See
-    capint.models.volatility's module docstring for why this isn't tied
-    to any Company/Entity."""
-    stmt = (
-        select(VolatilityIndexLevel)
-        .where(VolatilityIndexLevel.index_code == index_code.upper())
-        .order_by(VolatilityIndexLevel.trade_date.desc())
-    )
+    extension) — VIX by default. `as_of` (Phase 17) is deliberately
+    *ingestion-time* gating (`created_at <= as_of`), not the
+    `Event.publication_time`-based "public" semantics used everywhere
+    else in this API: an index level has no separate "publication" moment
+    distinct from its own trade date (Cboe publishes it same-day), so
+    there's no genuine disclosure timestamp to gate on — see
+    capint.temporal's module docstring for the as_of_public/as_of_ingested
+    distinction this follows. See capint.models.volatility's module
+    docstring for why this isn't tied to any Company/Entity."""
+    stmt = select(VolatilityIndexLevel).where(VolatilityIndexLevel.index_code == index_code.upper())
+    if as_of is not None:
+        stmt = stmt.where(VolatilityIndexLevel.created_at <= as_of)
+    stmt = stmt.order_by(VolatilityIndexLevel.trade_date.desc())
     levels = session.execute(stmt).scalars().all()
     return [VolatilityIndexLevelOut.model_validate(level) for level in levels]
 
@@ -624,14 +631,24 @@ def list_analyst_recommendation_trends(
 @app.get("/api/v1/relationships/interlocking-directorates", response_model=list[InterlockingDirectorateOut])
 def list_interlocking_directorates(
     company_entity_id: UUID | None = None,
+    as_of: datetime | None = Query(
+        default=None,
+        description="Point-in-time cutoff against each role's earliest Form 4 disclosure date "
+        "(PersonCompanyRole.start_date). Omit for the current, ungated full graph. See endpoint docstring.",
+    ),
     session: Session = Depends(get_session),
 ) -> list[InterlockingDirectorateOut]:
     """Companies connected by a shared Person holding a role at both
     (Phase 15, pipeline's RELATIONSHIPS layer) — derived entirely from
     real Form 4 PersonCompanyRole data already in this system, not a new
-    external data source. See capint.relationships.engine's module
-    docstring for why only this relationship type is built."""
-    results = compute_interlocking_directorates(session, company_entity_id=company_entity_id)
+    external data source. `as_of` (Phase 17) is a genuine but asymmetric
+    point-in-time gate — it can exclude a role not yet disclosed by
+    `as_of`, but can never exclude one that has since ended (Form 4
+    doesn't disclose role terminations). See
+    capint.relationships.engine's module docstring for the full
+    reasoning and capint.models.person.PersonCompanyRole's docstring for
+    exactly what `start_date` does and doesn't represent."""
+    results = compute_interlocking_directorates(session, company_entity_id=company_entity_id, as_of=as_of)
     return [
         InterlockingDirectorateOut(
             company_a_entity_id=r.company_a_entity_id,
@@ -642,6 +659,8 @@ def list_interlocking_directorates(
             person_name=r.person_name,
             role_at_company_a=r.role_at_company_a,
             role_at_company_b=r.role_at_company_b,
+            role_a_start_date=r.role_a_start_date,
+            role_b_start_date=r.role_b_start_date,
         )
         for r in results
     ]
@@ -650,16 +669,28 @@ def list_interlocking_directorates(
 @app.get("/api/v1/news-sentiment", response_model=list[NewsSentimentSnapshotOut])
 def list_news_sentiment_snapshots(
     company_entity_id: UUID | None = None,
+    as_of: datetime | None = Query(
+        default=None,
+        description="Ingestion-time cutoff (NewsSentimentSnapshot.retrieved_at) — which search snapshots "
+        "this platform had already run by as_of, NOT a per-article publication cutoff. See endpoint docstring.",
+    ),
     session: Session = Depends(get_session),
 ) -> list[NewsSentimentSnapshotOut]:
-    """News-tone ("sentiment") snapshots (Phase 15), newest first. Not
-    point-in-time gated (no `as_of` parameter) — `retrieved_at` is when
-    this system ran the search, not a filing/disclosure timestamp. See
+    """News-tone ("sentiment") snapshots (Phase 15), newest first. `as_of`
+    (Phase 17) is deliberately *ingestion-time* gating
+    (`retrieved_at <= as_of`), the same as_of_ingested semantics
+    capint.temporal documents for Events — `retrieved_at` is when this
+    system ran the search, not any individual article's publication
+    timestamp, so this can only answer "was this snapshot already pulled
+    by as_of," never "was this coverage publicly known by as_of." See
     capint.models.news_sentiment's module docstring for why this is
     directional sentiment context, not a precise per-company signal."""
-    stmt = select(NewsSentimentSnapshot).order_by(NewsSentimentSnapshot.retrieved_at.desc())
+    stmt = select(NewsSentimentSnapshot)
     if company_entity_id is not None:
         stmt = stmt.where(NewsSentimentSnapshot.company_entity_id == company_entity_id)
+    if as_of is not None:
+        stmt = stmt.where(NewsSentimentSnapshot.retrieved_at <= as_of)
+    stmt = stmt.order_by(NewsSentimentSnapshot.retrieved_at.desc())
     snapshots = session.execute(stmt).scalars().all()
     return [NewsSentimentSnapshotOut.model_validate(s) for s in snapshots]
 

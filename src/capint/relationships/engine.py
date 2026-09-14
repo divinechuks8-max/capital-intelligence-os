@@ -7,12 +7,20 @@ now matters here).
 
 Computed on demand, like capint.radar and capint.convergence, not
 persisted — a relationship here is a live view over current
-PersonCompanyRole rows. This system doesn't track a start/end validity
-window for a role precisely (Form 4 doesn't disclose when a role
-formally ends; see capint.models.person.PersonCompanyRole), so there's no
-genuine point-in-time cutoff to gate an `as_of` parameter on — same
-reasoning as capint.models.volatility.VolatilityIndexLevel and
-capint.models.analyst.AnalystRecommendationTrend.
+PersonCompanyRole rows.
+
+**Point-in-time gating (Phase 17)**: `as_of` filters out any role whose
+`PersonCompanyRole.start_date` (the earliest Form 4 disclosure evidencing
+it — see that model's docstring) is after `as_of`. This is a genuine,
+if asymmetric, point-in-time gate: it can correctly exclude a role that
+hadn't yet been disclosed as of `as_of` (no look-ahead), but it can never
+exclude a role that has, in reality, already ended by `as_of` — Form 4
+doesn't disclose role terminations, so `end_date` stays unpopulated and
+unused. A role with no `start_date` at all (only possible for a row
+created without ever passing `first_evidence_time` to
+`upsert_person_company_role`, e.g. directly by a test) is excluded from
+any `as_of`-gated query, since this system cannot defend a claim about
+when it became known. Omit `as_of` for the current, ungated full graph.
 
 **Scoped to interlocking directorates only for this increment.** A
 Person serving as an officer/director at two or more companies is a
@@ -38,6 +46,7 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -56,18 +65,27 @@ class InterlockingDirectorate:
     person_name: str
     role_at_company_a: str | None
     role_at_company_b: str | None
+    role_a_start_date: date | None
+    role_b_start_date: date | None
 
 
 def compute_interlocking_directorates(
-    session: Session, company_entity_id: uuid.UUID | None = None
+    session: Session, company_entity_id: uuid.UUID | None = None, as_of: datetime | None = None
 ) -> list[InterlockingDirectorate]:
     """Every pair of companies connected by a shared Person holding a role
     (officer/director/10%-owner) at both, derived from real Form 4-sourced
     PersonCompanyRole data. Pass `company_entity_id` to scope to just that
     company's interlocks; omit for the full graph currently in this
     system (small enough, given how few companies/people are ingested so
-    far, not to need pagination — revisit if that changes)."""
-    roles = session.execute(select(PersonCompanyRole)).scalars().all()
+    far, not to need pagination — revisit if that changes). Pass `as_of`
+    to point-in-time gate on each role's `start_date` — see this module's
+    docstring for exactly what that does and doesn't guarantee."""
+    stmt = select(PersonCompanyRole)
+    if as_of is not None:
+        stmt = stmt.where(
+            PersonCompanyRole.start_date.is_not(None), PersonCompanyRole.start_date <= as_of.date()
+        )
+    roles = session.execute(stmt).scalars().all()
 
     by_person: dict[uuid.UUID, dict[uuid.UUID, PersonCompanyRole]] = defaultdict(dict)
     for role in roles:
@@ -104,6 +122,8 @@ def compute_interlocking_directorates(
                         person_name=_entity_name(person_id),
                         role_at_company_a=companies[a_id].role_title,
                         role_at_company_b=companies[b_id].role_title,
+                        role_a_start_date=companies[a_id].start_date,
+                        role_b_start_date=companies[b_id].start_date,
                     )
                 )
     return results

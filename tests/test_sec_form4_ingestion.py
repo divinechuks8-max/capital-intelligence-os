@@ -1,14 +1,16 @@
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
 
 from capint.adapters.sec_edgar import SECEdgarForm4Adapter
-from capint.ingestion.sec_form4 import get_or_create_person, run_ingestion
+from capint.ingestion.sec_form4 import get_or_create_person, run_ingestion, upsert_person_company_role
 from capint.models.entity import Entity, EntityIdentifier, EntityType, IdentifierType
 from capint.models.event import Event, EventType
 from capint.models.insider import InsiderTransaction, InsiderTransactionType
 from capint.models.person import PersonCompanyRole
 from tests.fixtures.sec_form4 import make_test_client
+from tests.fixtures.synthetic import make_company, make_person
 
 
 def make_adapter() -> SECEdgarForm4Adapter:
@@ -65,6 +67,7 @@ def test_ingestion_creates_full_entity_and_event_graph(session):
     assert role.is_officer is False
 
     event = session.execute(select(Event).where(Event.primary_entity_id == company_entity.id)).scalar_one()
+    assert role.start_date == event.publication_time.date()
     assert event.event_type == EventType.INSIDER_SALE  # acquired_disposed_code == "D"
     assert event.confidence == 1.0
     assert event.raw_data_reference == "sec-form4:0001193125-26-389607#0"
@@ -126,3 +129,44 @@ def test_get_or_create_person_attaches_profile_to_pre_existing_bare_entity(sessi
     # A second call must not raise MultipleResultsFound and must return the same person.
     again = get_or_create_person(session, "0009999999", "Some Trust (SYNTHETIC)")
     assert again.entity_id == entity.id
+
+
+def test_upsert_person_company_role_start_date_tracks_earliest_evidence(session):
+    """start_date (Phase 17) must always reflect the earliest disclosed
+    evidence seen for a (person, company) pair, never the most recent —
+    a later re-confirming Form 4 transaction should never push start_date
+    forward, and an earlier one discovered later should pull it back."""
+    person = make_person(session)
+    company = make_company(session)
+
+    role = upsert_person_company_role(
+        session, person, company,
+        is_officer=True, is_director=False, is_ten_percent_owner=False, role_title="CEO",
+        first_evidence_time=datetime(2026, 6, 15, tzinfo=timezone.utc),
+    )
+    assert role.start_date == date(2026, 6, 15)
+
+    # A later transaction (later publication_time) must not push start_date forward.
+    role = upsert_person_company_role(
+        session, person, company,
+        is_officer=True, is_director=False, is_ten_percent_owner=False, role_title="CEO",
+        first_evidence_time=datetime(2026, 7, 1, tzinfo=timezone.utc),
+    )
+    assert role.start_date == date(2026, 6, 15)
+
+    # An earlier-dated transaction discovered later must pull start_date back.
+    role = upsert_person_company_role(
+        session, person, company,
+        is_officer=True, is_director=False, is_ten_percent_owner=False, role_title="CEO",
+        first_evidence_time=datetime(2026, 3, 1, tzinfo=timezone.utc),
+    )
+    assert role.start_date == date(2026, 3, 1)
+
+
+def test_upsert_person_company_role_leaves_start_date_null_without_evidence(session):
+    person = make_person(session)
+    company = make_company(session)
+    role = upsert_person_company_role(
+        session, person, company, is_officer=True, is_director=False, is_ten_percent_owner=False, role_title="CEO"
+    )
+    assert role.start_date is None

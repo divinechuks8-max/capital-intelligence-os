@@ -238,7 +238,10 @@ class InterlockingDirectorateOut(BaseModel):
     PersonCompanyRole data — not a new external data source. See
     capint.relationships.engine's module docstring for why only this
     relationship type is built (no common-institutional-ownership or
-    supply-chain relationships yet)."""
+    supply-chain relationships yet). `role_a_start_date`/`role_b_start_date`
+    (Phase 17) are each role's earliest Form 4 disclosure date — the
+    evidence an `as_of`-gated query was filtered against, never a bare
+    inclusion without a why."""
 
     company_a_entity_id: UUID
     company_a_name: str
@@ -248,6 +251,8 @@ class InterlockingDirectorateOut(BaseModel):
     person_name: str
     role_at_company_a: str | None
     role_at_company_b: str | None
+    role_a_start_date: date | None
+    role_b_start_date: date | None
 
 
 class NewsSentimentSnapshotOut(BaseModel):

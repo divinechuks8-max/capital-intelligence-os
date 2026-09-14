@@ -144,7 +144,16 @@ def upsert_person_company_role(
     is_director: bool,
     is_ten_percent_owner: bool,
     role_title: str | None,
+    first_evidence_time: datetime | None = None,
 ) -> PersonCompanyRole:
+    """`first_evidence_time` (Phase 17) is the disclosing Form 4
+    transaction's `publication_time` — used to set/tighten `start_date` to
+    the earliest disclosure date seen for this (person, company) pair, so
+    capint.relationships.engine can point-in-time gate on it. See
+    capint.models.person.PersonCompanyRole's docstring for exactly what
+    that is and isn't a guarantee of. Optional and defaults to None
+    (leaving `start_date` untouched) purely so existing callers/tests that
+    construct a role without any transaction evidence still work."""
     role = session.execute(
         select(PersonCompanyRole).where(
             PersonCompanyRole.person_entity_id == person.entity_id,
@@ -159,6 +168,10 @@ def upsert_person_company_role(
     role.is_ten_percent_owner = is_ten_percent_owner
     if role_title:
         role.role_title = role_title
+    if first_evidence_time is not None:
+        evidence_date = first_evidence_time.date()
+        if role.start_date is None or evidence_date < role.start_date:
+            role.start_date = evidence_date
     session.flush()
     return role
 
@@ -184,6 +197,7 @@ def ingest_transaction(session: Session, source: Source, txn: RawForm4Transactio
         is_director=txn.is_director,
         is_ten_percent_owner=txn.is_ten_percent_owner,
         role_title=txn.officer_title,
+        first_evidence_time=txn.published_at,
     )
 
     document = Document(
