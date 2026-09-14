@@ -1,5 +1,9 @@
 # Capital Intelligence OS
 
+[![tests](https://github.com/divinechuks8-max/capital-intelligence-os/actions/workflows/tests.yml/badge.svg)](https://github.com/divinechuks8-max/capital-intelligence-os/actions/workflows/tests.yml)
+![python](https://img.shields.io/badge/python-3.12-blue)
+![license](https://img.shields.io/badge/license-unlicensed-lightgrey)
+
 Public-market intelligence and capital-flow research platform. See project
 notes for the full multi-phase spec; this repo currently implements the
 Phase 1 foundation only: entity resolution, event/provenance modeling, and
