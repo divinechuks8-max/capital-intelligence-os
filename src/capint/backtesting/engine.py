@@ -4,21 +4,22 @@ HISTORICAL VALIDATION stage).
 **Research/exploratory descriptive statistics only — never a trading
 signal, a probability, or investment advice.** This computes what
 actually happened to a company's price after a real, already-disclosed
-signal date, using real ingested price data (capint.models.price.PriceBar,
-via Alpha Vantage). It reports plain counts/means/medians of observed
-forward returns; it does not compute or claim statistical significance,
-does not correct for multiple comparisons, and a small sample here should
-never be read as predictive. A human must interpret these numbers, per
-this project's spec (RESEARCH -> ALERT -> HUMAN DECISION, never an
-automated trading action).
+signal date, using real ingested price data (capint.models.price.PriceBar).
+It reports plain counts/means/medians of observed forward returns; it
+does not compute or claim statistical significance, does not correct for
+multiple comparisons, and a small sample here should never be read as
+predictive. A human must interpret these numbers, per this project's spec
+(RESEARCH -> ALERT -> HUMAN DECISION, never an automated trading action).
 
-**A real, load-bearing limitation, confirmed live before this was
-built**: Alpha Vantage's free tier only exposes the trailing ~100 trading
-days of price history (`outputsize=full`, the complete history, is a
-premium-only feature — see capint.adapters.alpha_vantage's module
-docstring). A signal older than that window has no price data to compute
-a forward return against here, and `compute_forward_return` returns an
-explicit `note` explaining that rather than fabricating a result.
+**No ingestion path currently populates PriceBar** — see that model's
+docstring for why the original Alpha Vantage source (Phase 13) was
+removed in Phase 15 (a real Terms of Service violation for this
+platform's architecture, not a technical limitation) and why a genuinely
+free, compliant replacement wasn't found despite checking four vendors.
+This engine's logic remains valid and ready the moment a compliant price
+source is identified; every call here will simply find no rows to work
+with until then, and report that honestly via `note` rather than
+fabricating a result.
 
 Point-in-time discipline: `compute_forward_return`'s entry price is the
 first price bar ON OR AFTER the signal date, never before it — the same
@@ -100,8 +101,8 @@ def compute_forward_return(
             entry_price=entry.close,
             note=(
                 f"Only {len(forward_bars)} trading day(s) of forward price history ingested (need "
-                f"{holding_trading_days}) — likely beyond this system's ~100-trading-day free-tier "
-                "price window (see capint.adapters.alpha_vantage)."
+                f"{holding_trading_days}) — see capint.models.price.PriceBar's docstring: no "
+                "ingestion path currently populates this table."
             ),
         )
 

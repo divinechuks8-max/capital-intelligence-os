@@ -9,27 +9,35 @@ from capint.models.base import Base, CreatedAtMixin, UUIDPKMixin
 
 class AnalystRecommendationTrend(UUIDPKMixin, CreatedAtMixin, Base):
     """One month's aggregate analyst recommendation consensus for one
-    company (Phase 14, analyst-estimates extension — spec's
-    ANALYST_RATING_CHANGE/ESTIMATE_REVISION event types) — counts of
-    covering analysts in each rating bucket (strong buy/buy/hold/sell/
-    strong sell), not individual named analysts or price targets.
-
-    **Confirmed live before building this**: Finnhub's free tier
-    (self-service API key, instant signup) genuinely includes this
-    endpoint — every other free/legal analyst-estimate source checked
-    during Phase 12's research required a paid/licensed relationship;
-    this one doesn't.
+    company (spec's ANALYST_RATING_CHANGE/ESTIMATE_REVISION event types)
+    — counts of covering analysts in each rating bucket (strong buy/buy/
+    hold/sell/strong sell), not individual named analysts or price
+    targets.
 
     Not Event/Document-based, like capint.models.price.PriceBar and
-    capint.models.volatility.VolatilityIndexLevel — Finnhub's `period`
-    field is a monthly aggregation bucket, not a filing or announcement
-    with a genuine disclosure timestamp, so there is no real
-    "publication_time" to assign without fabricating false precision.
-    `company_entity_id` resolves through the same ticker-based lookup
+    capint.models.volatility.VolatilityIndexLevel — a monthly aggregation
+    bucket is not a filing or announcement with a genuine disclosure
+    timestamp, so there is no real "publication_time" to assign without
+    fabricating false precision. `company_entity_id` resolves through the
+    same ticker-based lookup
     capint.ingestion.finra_short_interest.get_or_create_company_by_ticker
-    uses, for the same reason Phase 13's price data does — so this data
-    lands on the same Entity as other ticker-resolved signals for the
-    same company.
+    uses, so this data would land on the same Entity as other
+    ticker-resolved signals for the same company.
+
+    **No ingestion path currently populates this table.** Phase 14
+    originally built one against Finnhub, whose free tier looked
+    accessible from its API docs; Phase 15 removed it after reading
+    Finnhub's actual Terms of Service, which restrict the free tier to
+    personal use ("strictly for personal use unless explicitly stated
+    otherwise... Personal plan can't be used by any business even
+    internally") and prohibit redistribution ("not redistribute or share
+    access to data or derived results... with anyone or any 3rd party
+    without written approval"). A search for a compliant replacement
+    (Twelve Data, Polygon.io — both checked for the equivalent price-data
+    problem — plus the IBES/Zacks/Visible Alpha sources ruled out in
+    Phase 12) found the same individual-use-only restriction everywhere;
+    no free, compliant analyst-estimate source was identified. This
+    model/schema remains valid and reusable the moment one is.
     """
 
     __tablename__ = "analyst_recommendation_trends"

@@ -377,22 +377,32 @@ def test_volatility_index_endpoint(session):
 
 
 def test_analyst_recommendations_endpoint(session):
-    from capint.adapters.finnhub import FinnhubAdapter
-    from capint.ingestion.finnhub import run_ingestion as run_finnhub_ingestion
-    from tests.fixtures.finnhub import KNOWN_TICKER, make_test_client as make_finnhub_test_client
+    """No ingestion path currently populates AnalystRecommendationTrend —
+    see that model's docstring — so this test builds rows directly,
+    matching capint.backtesting's synthetic-fixture approach for
+    PriceBar, another currently-unpopulated table. The endpoint itself
+    (serving whatever rows exist) is still real, working code worth
+    covering."""
+    from tests.fixtures.synthetic import make_analyst_recommendation_trend, make_price_source
 
-    adapter = FinnhubAdapter(api_key="test-key-not-real", client=make_finnhub_test_client(), min_request_interval=0)
-    run_finnhub_ingestion(session, adapter, [KNOWN_TICKER])
+    source = make_price_source(session)
+    company = make_company(session)
+
+    make_analyst_recommendation_trend(
+        session, company=company, source=source, ticker="AAPL",
+        period=dt(2026, 9, 1).date(), strong_buy=12, buy=22, hold=15, sell=3, strong_sell=1,
+    )
+    session.commit()
 
     client = next(make_client(session))
 
     trends = client.get("/api/v1/analyst-recommendations").json()
-    assert len(trends) == 4
-    assert trends[0]["period"] == "2026-09-01"  # newest first
+    assert len(trends) == 1
+    assert trends[0]["period"] == "2026-09-01"
     assert trends[0]["strong_buy"] == 12
 
     filtered = client.get("/api/v1/analyst-recommendations", params={"ticker": "AAPL"}).json()
-    assert len(filtered) == 4
+    assert len(filtered) == 1
 
     none_filtered = client.get("/api/v1/analyst-recommendations", params={"ticker": "MSFT"}).json()
     assert none_filtered == []

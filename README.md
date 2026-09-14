@@ -342,7 +342,6 @@ triggering score — never a bare number without a why.
 ## Backtesting
 
 ```bash
-python -m capint.cli ingest-prices --ticker AAPL
 python -m capint.cli backtest-short-interest --holding-trading-days 10
 ```
 
@@ -351,11 +350,15 @@ GET /api/v1/backtest/short-interest?holding_trading_days=10
 ```
 
 The pipeline's HISTORICAL VALIDATION stage (Phase 13) — reports what
-actually followed a real rising-short-interest signal, using real
-Alpha Vantage daily price bars. **Plain descriptive statistics only, never
-a trading signal or investment advice** — see "Known limitations (Phase
-13)" below for the free tier's ~100-trading-day price-history ceiling and
-full scope notes.
+actually followed a real rising-short-interest signal, using real daily
+price bars (`capint.models.price.PriceBar`). **Plain descriptive
+statistics only, never a trading signal or investment advice.**
+**Currently has no working ingestion path** — Phase 13's original price
+source (Alpha Vantage) was removed in Phase 15 after its actual Terms of
+Service turned out to prohibit this platform's architecture; see "Known
+limitations (Phase 15)" below. This command and endpoint remain real,
+tested, working code — they'll simply report zero signals with
+computable forward returns until a compliant price source is ingested.
 
 ## Ingest real M&A corporate-action disclosures
 
@@ -406,28 +409,19 @@ the same way (`--index-code VVIX`, `--index-code SKEW`, ...). Not tied to
 any Company/Entity — see `src/capint/models/volatility.py`'s module
 docstring for why.
 
-## Ingest real analyst recommendation trends
-
-Requires a free `FINNHUB_API_KEY` — self-service signup at
-[finnhub.io/register](https://finnhub.io/register), instant:
-
-```bash
-python -m capint.cli ingest-analyst-recommendations --ticker AAPL
-```
+## Analyst recommendation trends
 
 ```
 GET /api/v1/analyst-recommendations?ticker=AAPL
 ```
 
-Aggregate counts of covering analysts by rating bucket (strong buy/buy/
-hold/sell/strong sell) per month — confirmed live to be genuinely
-accessible on Finnhub's free tier, unlike every other analyst-estimate
-source checked during Phase 12's research (IBES/Refinitiv, Zacks, Visible
-Alpha all require a paid/licensed relationship). **Individual named
-analysts and price targets are a separate, paid Finnhub feature, not
-ingested here** — only the aggregate rating-bucket counts. Resolved by
-ticker, the same lookup Phase 13's price/short-interest data uses, so
-this data lands on the same Company entity.
+**Currently has no working ingestion path.** Phase 14 originally built
+one against Finnhub's free tier, which the API docs suggested was
+accessible; Phase 15 removed it after reading Finnhub's actual Terms of
+Service, which restrict the free tier to personal use and prohibit
+redistribution — the same problem as Alpha Vantage's price data (see
+"Known limitations (Phase 15)"). The model and this read-only endpoint
+remain real, tested, working code, ready for a compliant source.
 
 ## Test
 
@@ -1002,7 +996,18 @@ complete.
 
 **Historical validation / backtesting harness:**
 
-Uses Alpha Vantage daily price bars (free, self-service API key —
+> **Update (Phase 15): the Alpha Vantage price-data source described
+> below was removed.** Reading Alpha Vantage's actual Terms of Service
+> (not just its API docs) found the free tier is licensed for personal,
+> non-commercial use only and excludes exactly this platform's
+> ingest-and-serve architecture. No compliant free replacement was found
+> despite checking three more vendors. See "Known limitations (Phase 15)"
+> for the full finding. The section below is preserved as an accurate
+> record of what was built and validated at the time; the harness itself
+> (`capint/backtesting/engine.py`) is unchanged and ready for a compliant
+> source.
+
+Used Alpha Vantage daily price bars (free, self-service API key —
 `ALPHA_VANTAGE_API_KEY`, same registration pattern as Companies House in
 Phase 11) to compute what actually followed a real, already-disclosed
 short-interest signal — see "Backtesting" above for usage.
@@ -1086,6 +1091,13 @@ analyst estimates/ratings. All three are complete.
 
 **Analyst estimates/ratings (Finnhub):**
 
+> **Update (Phase 15): the Finnhub source described below was removed.**
+> Its actual Terms of Service restrict the free tier to personal use and
+> prohibit redistribution without written approval — the same problem as
+> Alpha Vantage's price data. No compliant replacement was found. See
+> "Known limitations (Phase 15)". The model and read-only API endpoint
+> are unchanged and ready for a compliant source.
+
 - **Aggregate rating-bucket counts only** (how many covering analysts
   rated strong buy/buy/hold/sell/strong sell each month) — **individual
   named analysts and price targets are a separate, paid Finnhub feature,
@@ -1107,3 +1119,89 @@ analyst estimates/ratings. All three are complete.
   that ticker's short-interest/price data from earlier phases; idempotent
   re-ingestion confirmed; served correctly through
   `/api/v1/analyst-recommendations` over HTTP.
+
+## Known limitations (Phase 15)
+
+Phase 15 began as three requested extensions (news/sentiment, supply-
+chain/relationship graph, crypto expansion) but surfaced a significant
+compliance finding partway through that took priority: **two already-
+shipped data sources (Alpha Vantage price data from Phase 13, Finnhub
+analyst data from Phase 14) were removed after their actual Terms of
+Service — not just their API documentation — turned out to prohibit this
+platform's architecture.**
+
+**What was found and why it matters:**
+
+- While researching a Phase 15 news/sentiment source, Alpha Vantage's own
+  `NEWS_SENTIMENT` endpoint looked promising (real per-article,
+  per-ticker sentiment scores, confirmed live) — but reading Alpha
+  Vantage's Terms of Service PDF (not just its API docs, which say
+  nothing about this) found the free tier is licensed for "personal,
+  non-commercial use" and explicitly excludes: using the platform "as or
+  on behalf of a corporation, firm, partnership, trust or any other
+  association" and "as part of any type of commercial activity that
+  allows individuals or entities other than User to access information
+  directly or indirectly." This system's architecture — ingest into a
+  database, serve back out through an API — is squarely what those
+  clauses describe, independent of whether anyone is charged anything.
+  This applied retroactively to Phase 13's already-shipped price-bar
+  ingestion, which had only been checked against the narrower
+  `outputsize=full` premium-feature restriction, not this broader one.
+- Checking whether this was Alpha-Vantage-specific, three more vendors
+  were checked: **Twelve Data** (explicitly: "(l) Use Free Tier data for
+  commercial purposes" is a prohibited use), **Finnhub** (explicitly:
+  "strictly for personal use... Personal plan can't be used by any
+  business even internally," and "not redistribute or share access to
+  data or derived results... with anyone or any 3rd party without
+  written approval") — this one applied retroactively to Phase 14's
+  already-shipped analyst-recommendation-trends ingestion — and
+  **Polygon.io** (splits "Individual Use" free-tier terms from "Business
+  Use" paid terms the same way). All four show the identical pattern.
+- This is a structural consequence of how US equity market data is
+  licensed for redistribution at the exchange level (UTP/CTA plans),
+  which is why free tiers exist to hook individual retail users, not to
+  power third-party applications — not arbitrary vendor stinginess. A
+  good-faith search for a compliant free replacement, for both daily
+  equity prices and analyst estimates, found none.
+- **FINRA (Phase 10) and Cboe (Phase 14's volatility indices) were
+  evaluated against the same question and kept, deliberately.** Both
+  have a generic "personal non-commercial use" clause in their *general
+  website* Terms of Use, but that is standard boilerplate covering
+  reproduction of ordinary web page content — a different thing from a
+  data-API product's own specific license, which is what the four
+  removed sources explicitly restricted. FINRA's short-interest API
+  exists to fulfill a Rule 4560 regulatory disclosure mandate; Cboe's own
+  VIX product page explicitly markets the historical index CSV as public,
+  "Updated Daily" data, distinct from its paid DataShop product. Neither
+  has a data-API-specific clause restricting this use the way Alpha
+  Vantage, Twelve Data, Finnhub, and Polygon.io do. This is a real,
+  considered distinction, not a convenient excuse to keep working
+  features — it was reached by reading each source's actual terms, the
+  same standard applied to the sources that were removed.
+
+**What changed as a result:**
+
+- `src/capint/adapters/alpha_vantage.py`, `src/capint/ingestion/alpha_vantage.py`,
+  their CLI command (`ingest-prices`), and their tests/fixtures were
+  deleted. `src/capint/models/price.py` (`PriceBar`) and
+  `src/capint/backtesting/engine.py` were kept — the schema and
+  backtesting logic aren't the problem, only the removed ingestion path
+  was. The backtesting CLI command and API endpoint still work; they now
+  report zero signals with computable forward returns until a compliant
+  price source exists.
+- `src/capint/adapters/finnhub.py`, `src/capint/ingestion/finnhub.py`,
+  their CLI command (`ingest-analyst-recommendations`), and their tests/
+  fixtures were deleted. `src/capint/models/analyst.py`
+  (`AnalystRecommendationTrend`) and the read-only
+  `GET /api/v1/analyst-recommendations` endpoint were kept for the same
+  reason.
+- Already-ingested Alpha Vantage/Finnhub data (200 real AAPL/MSFT price
+  bars, 8 real analyst-recommendation rows) was purged from the local
+  dev database — retaining data obtained via a since-identified
+  ToS-violating method is part of the same concern as the ingestion code
+  itself.
+- `ALPHA_VANTAGE_API_KEY` and `FINNHUB_API_KEY` were removed from
+  `.env`/`.env.example`/`config.py`.
+- The rest of Phase 15 (news/sentiment, relationship graph, crypto
+  expansion) was not yet started as of this remediation — it resumes
+  from here.

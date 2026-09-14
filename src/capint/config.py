@@ -14,8 +14,6 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     sec_edgar_user_agent: str = ""
     companies_house_api_key: str = ""
-    alpha_vantage_api_key: str = ""
-    finnhub_api_key: str = ""
 
 
 settings = Settings()

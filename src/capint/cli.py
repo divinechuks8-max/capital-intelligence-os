@@ -11,11 +11,9 @@
     python -m capint.cli ingest-guidance --cik 0000320193
     python -m capint.cli create-alert-rule --name "High insider conviction" --rule-type INSIDER_CONVICTION_THRESHOLD --min-score 75
     python -m capint.cli evaluate-alerts
-    python -m capint.cli ingest-prices --ticker AAPL
     python -m capint.cli backtest-short-interest
     python -m capint.cli ingest-corporate-actions --cik 0000789019
     python -m capint.cli ingest-volatility-index --index-code VIX
-    python -m capint.cli ingest-analyst-recommendations --ticker AAPL
 """
 
 import argparse
@@ -24,11 +22,9 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from capint.adapters.alpha_vantage import AlphaVantageAdapter
 from capint.adapters.blockchain_info import BlockchainInfoAdapter
 from capint.adapters.cboe_volatility import CBOEVolatilityIndexAdapter
 from capint.adapters.companies_house import CompaniesHouseAdapter
-from capint.adapters.finnhub import FinnhubAdapter
 from capint.adapters.finra_short_interest import FINRAShortInterestAdapter
 from capint.adapters.sec_13dg import SEC13DGAdapter
 from capint.adapters.sec_13f import SEC13FAdapter
@@ -42,11 +38,9 @@ from capint.alerting.rules import create_or_update_alert_rule
 from capint.backtesting.engine import DEFAULT_HOLDING_TRADING_DAYS, backtest_rising_short_interest_cycles
 from capint.config import settings
 from capint.db import SessionLocal
-from capint.ingestion.alpha_vantage import run_ingestion as run_price_ingestion
 from capint.ingestion.blockchain_info import run_ingestion as run_crypto_treasury_ingestion
 from capint.ingestion.cboe_volatility import run_ingestion as run_volatility_index_ingestion
 from capint.ingestion.companies_house import run_ingestion as run_uk_psc_ingestion
-from capint.ingestion.finnhub import run_ingestion as run_analyst_recommendation_ingestion
 from capint.ingestion.finra_short_interest import run_ingestion as run_short_interest_ingestion
 from capint.ingestion.sec_13dg import run_ingestion as run_13dg_ingestion
 from capint.ingestion.sec_13f import run_ingestion as run_13f_ingestion
@@ -76,28 +70,6 @@ def _require_companies_house_api_key() -> bool:
         print(
             "COMPANIES_HOUSE_API_KEY is not set (see .env.example) — refusing to send "
             "unauthenticated requests to Companies House.",
-            file=sys.stderr,
-        )
-        return False
-    return True
-
-
-def _require_finnhub_api_key() -> bool:
-    if not settings.finnhub_api_key:
-        print(
-            "FINNHUB_API_KEY is not set (see .env.example) — refusing to send "
-            "unauthenticated requests to Finnhub.",
-            file=sys.stderr,
-        )
-        return False
-    return True
-
-
-def _require_alpha_vantage_api_key() -> bool:
-    if not settings.alpha_vantage_api_key:
-        print(
-            "ALPHA_VANTAGE_API_KEY is not set (see .env.example) — refusing to send "
-            "unauthenticated requests to Alpha Vantage.",
             file=sys.stderr,
         )
         return False
@@ -394,33 +366,6 @@ def evaluate_alerts() -> int:
     return 0
 
 
-def ingest_prices(tickers: list[str]) -> int:
-    """Ingests daily OHLCV price bars for explicitly-provided tickers
-    (Phase 13, backtesting extension). Free-tier limitation: only the
-    trailing ~100 trading days are available (`outputsize=full`, complete
-    history, is premium-only on Alpha Vantage — confirmed live). No
-    --from-tracked: prices are useful for any company, not just ones
-    already tracked via a CIK/company-number pathway."""
-    if not _require_alpha_vantage_api_key():
-        return 1
-    if not tickers:
-        print("No tickers to process — pass --ticker one or more times (e.g. --ticker AAPL).", file=sys.stderr)
-        return 1
-
-    adapter = AlphaVantageAdapter(api_key=settings.alpha_vantage_api_key)
-    with SessionLocal() as session:
-        summary = run_price_ingestion(session, adapter, tickers)
-
-    print(f"tickers seen:                {summary.tickers_seen}")
-    print(f"tickers with no data:        {summary.tickers_with_no_data}")
-    print(f"price bars created:          {summary.bars_created}")
-    print(f"price bars skipped (dup):    {summary.bars_skipped_duplicate}")
-    print(f"ticker errors:               {len(summary.ticker_errors)}")
-    for err in summary.ticker_errors:
-        print(f"  - {err}")
-    return 0
-
-
 def backtest_short_interest(holding_trading_days: int) -> int:
     """Explores what historically followed a rising FINRA short-interest
     cycle, using whatever real price data has been ingested (Phase 13,
@@ -491,31 +436,6 @@ def ingest_volatility_index(index_codes: list[str]) -> int:
     print(f"levels skipped (dup):        {summary.levels_skipped_duplicate}")
     print(f"index code errors:           {len(summary.index_code_errors)}")
     for err in summary.index_code_errors:
-        print(f"  - {err}")
-    return 0
-
-
-def ingest_analyst_recommendations(tickers: list[str]) -> int:
-    """Ingests Finnhub aggregate analyst recommendation trends for
-    explicitly-provided tickers (Phase 14, analyst-estimates extension).
-    Free-tier scope: aggregate rating-bucket counts only, not individual
-    analyst estimates or price targets (a separate paid Finnhub feature)."""
-    if not _require_finnhub_api_key():
-        return 1
-    if not tickers:
-        print("No tickers to process — pass --ticker one or more times (e.g. --ticker AAPL).", file=sys.stderr)
-        return 1
-
-    adapter = FinnhubAdapter(api_key=settings.finnhub_api_key)
-    with SessionLocal() as session:
-        summary = run_analyst_recommendation_ingestion(session, adapter, tickers)
-
-    print(f"tickers seen:                {summary.tickers_seen}")
-    print(f"tickers with no data:        {summary.tickers_with_no_data}")
-    print(f"trends created:              {summary.trends_created}")
-    print(f"trends skipped (dup):        {summary.trends_skipped_duplicate}")
-    print(f"ticker errors:               {len(summary.ticker_errors)}")
-    for err in summary.ticker_errors:
         print(f"  - {err}")
     return 0
 
@@ -595,9 +515,6 @@ def main() -> int:
 
     subparsers.add_parser("evaluate-alerts", help="Evaluate every active alert rule and persist new alerts")
 
-    prices_parser = subparsers.add_parser("ingest-prices", help="Ingest daily OHLCV price bars (Alpha Vantage)")
-    prices_parser.add_argument("--ticker", action="append", default=[], help="Ticker symbol (repeatable)")
-
     backtest_parser = subparsers.add_parser(
         "backtest-short-interest", help="Explore forward returns following rising short-interest cycles"
     )
@@ -619,11 +536,6 @@ def main() -> int:
     volatility_parser.add_argument(
         "--index-code", action="append", default=[], help="Cboe index code, e.g. VIX (repeatable; defaults to VIX)"
     )
-
-    analyst_parser = subparsers.add_parser(
-        "ingest-analyst-recommendations", help="Ingest Finnhub aggregate analyst recommendation trends"
-    )
-    analyst_parser.add_argument("--ticker", action="append", default=[], help="Ticker symbol (repeatable)")
 
     args = parser.parse_args()
     if args.command == "ingest-form4":
@@ -648,16 +560,12 @@ def main() -> int:
         return create_alert_rule(args.name, args.rule_type, args.min_score, args.convergence_labels)
     if args.command == "evaluate-alerts":
         return evaluate_alerts()
-    if args.command == "ingest-prices":
-        return ingest_prices(args.ticker)
     if args.command == "backtest-short-interest":
         return backtest_short_interest(args.holding_trading_days)
     if args.command == "ingest-corporate-actions":
         return ingest_corporate_actions(args.cik, args.filing_count)
     if args.command == "ingest-volatility-index":
         return ingest_volatility_index(args.index_code)
-    if args.command == "ingest-analyst-recommendations":
-        return ingest_analyst_recommendations(args.ticker)
     return 1
 
 

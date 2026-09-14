@@ -9,21 +9,34 @@ from capint.models.base import Base, CreatedAtMixin, UUIDPKMixin
 
 
 class PriceBar(UUIDPKMixin, CreatedAtMixin, Base):
-    """One daily OHLCV bar for one company (Phase 13's backtesting
-    extension). Not an Event/Document-based disclosure model like every
-    other observation in this system — a price bar isn't a filing or
-    announcement, it's continuously observable market data with no single
-    "publication" moment. Provenance is instead a plain `source_id` FK,
-    with a real, load-bearing limitation: the free tier of this system's
-    only price source (Alpha Vantage) exposes just the trailing ~100
-    trading days (`outputsize=compact`) — full multi-year history is a
-    paid feature, confirmed live before building this. See
-    capint.adapters.alpha_vantage's module docstring.
+    """One daily OHLCV bar for one company. Not an Event/Document-based
+    disclosure model like every other observation in this system — a
+    price bar isn't a filing or announcement, it's continuously
+    observable market data with no single "publication" moment.
+    Provenance is instead a plain `source_id` FK.
 
     `company_entity_id` resolves through the exact same ticker-based
     lookup capint.ingestion.finra_short_interest.get_or_create_company_by_ticker
     uses, so a short-interest signal and its price data land on the same
     Entity — required for capint.backtesting.engine to join them at all.
+
+    **No ingestion path currently populates this table.** Phase 13
+    originally built one against Alpha Vantage; Phase 15 removed it after
+    discovering, on closer reading of Alpha Vantage's actual Terms of
+    Service (not just its API docs), that the free tier is licensed for
+    "personal, non-commercial use" only and excludes use "as or on behalf
+    of a corporation... or any other association" and use "as part of any
+    type of commercial activity that allows individuals or entities other
+    than User to access information" — squarely what an ingest-and-serve
+    platform like this one does, regardless of whether it charges anyone.
+    A same-pattern check of three more vendors (Twelve Data, Finnhub,
+    Polygon.io) found the identical individual-use-only / business-tier
+    split on every one — a structural consequence of how US exchange
+    market data is licensed for redistribution (UTP/CTA plans), not
+    vendor-specific stinginess. No free, compliant daily-price source was
+    found despite this search. This model/schema and
+    capint.backtesting.engine remain valid and reusable the moment a
+    compliant source is identified — only the ingestion path was removed.
     """
 
     __tablename__ = "price_bars"

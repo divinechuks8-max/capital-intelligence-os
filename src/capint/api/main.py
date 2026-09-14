@@ -603,11 +603,11 @@ def list_analyst_recommendation_trends(
     ticker: str | None = None,
     session: Session = Depends(get_session),
 ) -> list[AnalystRecommendationTrendOut]:
-    """Aggregate Finnhub analyst recommendation trends (Phase 14),
-    newest period first. Not point-in-time gated (no `as_of` parameter),
-    same reasoning as the volatility-index endpoint — see
-    capint.models.analyst's module docstring for why there's no genuine
-    disclosure timestamp to gate on."""
+    """Aggregate analyst recommendation trends, newest period first. Not
+    point-in-time gated (no `as_of` parameter), same reasoning as the
+    volatility-index endpoint. See capint.models.analyst's module
+    docstring for why there's no genuine disclosure timestamp to gate on,
+    and why no ingestion path currently populates this table."""
     stmt = select(AnalystRecommendationTrend).order_by(AnalystRecommendationTrend.period.desc())
     if company_entity_id is not None:
         stmt = stmt.where(AnalystRecommendationTrend.company_entity_id == company_entity_id)

@@ -12,6 +12,7 @@ from capint.models.entity import Entity, EntityType
 from capint.models.event import Event, EventType
 from capint.models.insider import InsiderTransaction, InsiderTransactionType
 from capint.models.institution import InstitutionalHolding, InstitutionalManager, InstitutionalManagerType, InstitutionalPositionStatus
+from capint.models.analyst import AnalystRecommendationTrend
 from capint.models.person import Person, PersonCompanyRole
 from capint.models.price import PriceBar
 from capint.models.short_interest import ShortInterestSnapshot
@@ -235,7 +236,7 @@ def make_short_interest_snapshot_event(
 
 
 def make_price_source(session: Session) -> Source:
-    source = Source(name="Alpha Vantage (synthetic)", tier=SourceTier.B_LICENSED, base_url="https://www.alphavantage.co")
+    source = Source(name="Price Data Provider (synthetic)", tier=SourceTier.B_LICENSED, base_url="https://example.invalid")
     session.add(source)
     session.flush()
     return source
@@ -268,3 +269,32 @@ def make_price_bar(
     session.add(bar)
     session.flush()
     return bar
+
+
+def make_analyst_recommendation_trend(
+    session: Session,
+    *,
+    company: Company,
+    source: Source,
+    ticker: str,
+    period,
+    strong_buy: int,
+    buy: int,
+    hold: int,
+    sell: int,
+    strong_sell: int,
+) -> AnalystRecommendationTrend:
+    trend = AnalystRecommendationTrend(
+        company_entity_id=company.entity_id,
+        source_id=source.id,
+        ticker=ticker,
+        period=period,
+        strong_buy=strong_buy,
+        buy=buy,
+        hold=hold,
+        sell=sell,
+        strong_sell=strong_sell,
+    )
+    session.add(trend)
+    session.flush()
+    return trend
