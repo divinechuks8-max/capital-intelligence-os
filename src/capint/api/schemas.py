@@ -200,6 +200,21 @@ class CorporateActionDisclosureOut(BaseModel):
     publication_time: datetime
 
 
+class VolatilityIndexLevelOut(BaseModel):
+    """Not tied to any Company/Entity — see
+    capint.models.volatility.VolatilityIndexLevel's docstring for why."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    index_code: str
+    trade_date: date
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+
+
 class AlertRuleOut(BaseModel):
     """Rules are user configuration, created via the CLI — this schema
     exists only to read back what's configured, never to create one

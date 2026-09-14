@@ -28,6 +28,7 @@ from capint.api.schemas import (
     ShortInterestRadarEntryOut,
     ShortInterestSnapshotOut,
     UKPersonWithSignificantControlOut,
+    VolatilityIndexLevelOut,
 )
 from capint.convergence.engine import compute_convergence
 from capint.db import get_session
@@ -46,6 +47,7 @@ from capint.models.institution import InstitutionalHolding, InstitutionalManager
 from capint.models.ownership import BeneficialOwnershipDisclosure
 from capint.models.short_interest import ShortInterestSnapshot
 from capint.models.uk_psc import UKPersonWithSignificantControl
+from capint.models.volatility import VolatilityIndexLevel
 from capint.radar.insider_radar import compute_insider_radar
 from capint.radar.institutional_radar import compute_institutional_radar
 from capint.radar.short_interest_radar import compute_short_interest_radar
@@ -570,6 +572,27 @@ def list_corporate_action_disclosures(
         )
         for disclosure, event in rows
     ]
+
+
+@app.get("/api/v1/volatility-index", response_model=list[VolatilityIndexLevelOut])
+def list_volatility_index_levels(
+    index_code: str = "VIX",
+    session: Session = Depends(get_session),
+) -> list[VolatilityIndexLevelOut]:
+    """Daily Cboe volatility index history (Phase 14, options/derivatives
+    extension) — VIX by default. Not point-in-time gated like every other
+    endpoint here (no `as_of` parameter): unlike a disclosure, an index
+    level has no separate "publication" moment distinct from its own
+    trade date, and Cboe publishes it same-day. See
+    capint.models.volatility's module docstring for why this isn't tied
+    to any Company/Entity."""
+    stmt = (
+        select(VolatilityIndexLevel)
+        .where(VolatilityIndexLevel.index_code == index_code.upper())
+        .order_by(VolatilityIndexLevel.trade_date.desc())
+    )
+    levels = session.execute(stmt).scalars().all()
+    return [VolatilityIndexLevelOut.model_validate(level) for level in levels]
 
 
 @app.get("/api/v1/radar/insider", response_model=list[InsiderRadarEntryOut])

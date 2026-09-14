@@ -22,6 +22,7 @@ from capint.models.price import PriceBar
 from capint.models.short_interest import ShortInterestSnapshot
 from capint.models.source import Document, Source, SourceTier
 from capint.models.uk_psc import UKPersonWithSignificantControl
+from capint.models.volatility import VolatilityIndexLevel
 
 __all__ = [
     "Alert",
@@ -59,4 +60,5 @@ __all__ = [
     "Source",
     "SourceTier",
     "UKPersonWithSignificantControl",
+    "VolatilityIndexLevel",
 ]

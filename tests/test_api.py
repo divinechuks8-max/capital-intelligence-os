@@ -357,6 +357,25 @@ def test_corporate_actions_endpoint(session):
     assert len(filtered) == 1
 
 
+def test_volatility_index_endpoint(session):
+    from capint.adapters.cboe_volatility import CBOEVolatilityIndexAdapter
+    from capint.ingestion.cboe_volatility import run_ingestion as run_volatility_ingestion
+    from tests.fixtures.cboe_volatility import KNOWN_INDEX, make_test_client as make_cboe_test_client
+
+    adapter = CBOEVolatilityIndexAdapter(client=make_cboe_test_client(), min_request_interval=0)
+    run_volatility_ingestion(session, adapter, [KNOWN_INDEX])
+
+    client = next(make_client(session))
+
+    levels = client.get("/api/v1/volatility-index").json()
+    assert len(levels) == 10
+    assert levels[0]["trade_date"] == "2026-09-11"  # newest first
+    assert levels[0]["close"] == "15.8400"  # Numeric(14,4) column, source CSV has 6 decimals
+
+    none_filtered = client.get("/api/v1/volatility-index", params={"index_code": "ZZZZNOTAREAL"}).json()
+    assert none_filtered == []
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

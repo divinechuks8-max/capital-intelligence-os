@@ -378,6 +378,34 @@ exhibit or extract deal terms, consideration, or counterparty identity**
 — an OBSERVATION that a completed acquisition/disposition was disclosed,
 not this system's INTERPRETATION of what it says.
 
+## Ingest real Cboe volatility index history
+
+No API key needed:
+
+```bash
+python -m capint.cli ingest-volatility-index --index-code VIX
+```
+
+```
+GET /api/v1/volatility-index?index_code=VIX
+```
+
+Ingests the full daily history of a Cboe volatility index (VIX by
+default — the "fear index," calculated from S&P 500 index option
+prices). **Chosen over per-security unusual-options-activity or a real
+put/call ratio, which remain genuinely gated**: confirmed live during
+research that Cboe's own market-statistics pages now show sign-in/
+subscription indicators, and granular options-level data is explicitly
+sold via Cboe DataShop. This endpoint (`cdn.cboe.com/api/global/
+us_indices/daily_prices/{CODE}_History.csv`) is different — Cboe's own
+site describes it as public, "Updated Daily" data, distinct from
+DataShop. No free-tier depth limit either (unlike Phase 13's Alpha
+Vantage price data): the complete history (VIX: 1990 to present, ~9,270
+real trading days) is available in one request. Other Cboe indices work
+the same way (`--index-code VVIX`, `--index-code SKEW`, ...). Not tied to
+any Company/Entity — see `src/capint/models/volatility.py`'s module
+docstring for why.
+
 ## Test
 
 ```bash

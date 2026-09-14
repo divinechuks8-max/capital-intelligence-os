@@ -14,6 +14,7 @@
     python -m capint.cli ingest-prices --ticker AAPL
     python -m capint.cli backtest-short-interest
     python -m capint.cli ingest-corporate-actions --cik 0000789019
+    python -m capint.cli ingest-volatility-index --index-code VIX
 """
 
 import argparse
@@ -24,6 +25,7 @@ from sqlalchemy import select
 
 from capint.adapters.alpha_vantage import AlphaVantageAdapter
 from capint.adapters.blockchain_info import BlockchainInfoAdapter
+from capint.adapters.cboe_volatility import CBOEVolatilityIndexAdapter
 from capint.adapters.companies_house import CompaniesHouseAdapter
 from capint.adapters.finra_short_interest import FINRAShortInterestAdapter
 from capint.adapters.sec_13dg import SEC13DGAdapter
@@ -40,6 +42,7 @@ from capint.config import settings
 from capint.db import SessionLocal
 from capint.ingestion.alpha_vantage import run_ingestion as run_price_ingestion
 from capint.ingestion.blockchain_info import run_ingestion as run_crypto_treasury_ingestion
+from capint.ingestion.cboe_volatility import run_ingestion as run_volatility_index_ingestion
 from capint.ingestion.companies_house import run_ingestion as run_uk_psc_ingestion
 from capint.ingestion.finra_short_interest import run_ingestion as run_short_interest_ingestion
 from capint.ingestion.sec_13dg import run_ingestion as run_13dg_ingestion
@@ -455,6 +458,29 @@ def ingest_corporate_actions(ciks: list[str], filing_count: int) -> int:
     return 0
 
 
+def ingest_volatility_index(index_codes: list[str]) -> int:
+    """Ingests daily Cboe volatility index history (Phase 14, options/
+    derivatives extension) — VIX by default. No API key needed; no
+    free-tier depth limit either (the full multi-decade history is
+    available in one request). Not tied to any Company/Entity — see
+    capint.models.volatility's module docstring for why."""
+    if not index_codes:
+        index_codes = ["VIX"]
+
+    adapter = CBOEVolatilityIndexAdapter()
+    with SessionLocal() as session:
+        summary = run_volatility_index_ingestion(session, adapter, index_codes)
+
+    print(f"index codes seen:            {summary.index_codes_seen}")
+    print(f"index codes with no data:    {summary.index_codes_with_no_data}")
+    print(f"levels created:              {summary.levels_created}")
+    print(f"levels skipped (dup):        {summary.levels_skipped_duplicate}")
+    print(f"index code errors:           {len(summary.index_code_errors)}")
+    for err in summary.index_code_errors:
+        print(f"  - {err}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="capint")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -548,6 +574,13 @@ def main() -> int:
         "--filing-count", type=int, default=20, help="Max recent 8-K filings to scan per company"
     )
 
+    volatility_parser = subparsers.add_parser(
+        "ingest-volatility-index", help="Ingest daily Cboe volatility index history (VIX, VVIX, SKEW, ...)"
+    )
+    volatility_parser.add_argument(
+        "--index-code", action="append", default=[], help="Cboe index code, e.g. VIX (repeatable; defaults to VIX)"
+    )
+
     args = parser.parse_args()
     if args.command == "ingest-form4":
         return ingest_form4(args.count)
@@ -577,6 +610,8 @@ def main() -> int:
         return backtest_short_interest(args.holding_trading_days)
     if args.command == "ingest-corporate-actions":
         return ingest_corporate_actions(args.cik, args.filing_count)
+    if args.command == "ingest-volatility-index":
+        return ingest_volatility_index(args.index_code)
     return 1
 
 
