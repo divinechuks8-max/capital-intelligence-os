@@ -1,6 +1,8 @@
 # Capital Intelligence OS
 
+[![GitHub](https://img.shields.io/badge/GitHub-repo-181717?logo=github&logoColor=white)](https://github.com/divinechuks8-max/capital-intelligence-os)
 [![tests](https://github.com/divinechuks8-max/capital-intelligence-os/actions/workflows/tests.yml/badge.svg)](https://github.com/divinechuks8-max/capital-intelligence-os/actions/workflows/tests.yml)
+[![CI runs](https://img.shields.io/badge/CI-view_runs-2088FF?logo=githubactions&logoColor=white)](https://github.com/divinechuks8-max/capital-intelligence-os/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
