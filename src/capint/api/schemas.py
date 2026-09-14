@@ -250,6 +250,26 @@ class InterlockingDirectorateOut(BaseModel):
     role_at_company_b: str | None
 
 
+class NewsSentimentSnapshotOut(BaseModel):
+    """`tone_distribution` is the raw bin/count histogram GDELT returns,
+    never collapsed to a single opaque score — `mean_tone` is a
+    transparent derived summary. See
+    capint.models.news_sentiment.NewsSentimentSnapshot's docstring for
+    why this is directional sentiment context, not a precise
+    per-company signal (GDELT has no concept of "company")."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    company_entity_id: UUID
+    query: str
+    timespan: str
+    retrieved_at: datetime
+    article_count: int
+    mean_tone: Decimal | None
+    tone_distribution: list[dict]
+
+
 class AlertRuleOut(BaseModel):
     """Rules are user configuration, created via the CLI — this schema
     exists only to read back what's configured, never to create one

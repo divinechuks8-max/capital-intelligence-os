@@ -17,6 +17,7 @@ from capint.models.institution import (
     InstitutionalManagerType,
     InstitutionalPositionStatus,
 )
+from capint.models.news_sentiment import NewsSentimentSnapshot
 from capint.models.ownership import BeneficialOwnershipDisclosure, ScheduleType
 from capint.models.person import Person, PersonCompanyRole
 from capint.models.price import PriceBar
@@ -54,6 +55,7 @@ __all__ = [
     "InstitutionalManager",
     "InstitutionalManagerType",
     "InstitutionalPositionStatus",
+    "NewsSentimentSnapshot",
     "Person",
     "PersonCompanyRole",
     "PriceBar",

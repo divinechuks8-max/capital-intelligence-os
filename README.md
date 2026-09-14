@@ -444,6 +444,34 @@ public company to nearly every other one — noise, not a meaningful
 relationship, without a materiality threshold this increment doesn't
 build).
 
+## News sentiment
+
+No API key needed:
+
+```bash
+python -m capint.cli ingest-news-sentiment --ticker AAPL --query "Apple Inc" --timespan 7d
+```
+
+```
+GET /api/v1/news-sentiment?company_entity_id=...
+```
+
+Real news-tone (sentiment) distributions from the GDELT Project's free
+DOC 2.0 API (`api.gdeltproject.org`) — confirmed live to require no API
+key or registration, and GDELT's own Terms of Use explicitly permit
+"academic, commercial, or governmental use of any kind without fee" and
+redistribution "in any form" (attribution required) — the opposite
+finding from Alpha Vantage, Twelve Data, Finnhub, Polygon.io, and
+Etherscan, all checked and found to restrict free-tier use to personal
+purposes only (see "Known limitations (Phase 15)"). `--query` is the
+actual GDELT search string, kept deliberately separate from `--ticker`
+(used only for entity resolution) — searching by bare ticker symbol
+(e.g. "F" for Ford) would return near-random results. **GDELT has no
+concept of "company"**, only full-text search over global news — treat
+this as directional sentiment context, not a precise per-company signal.
+`tone_distribution` is the raw bin/count histogram GDELT returns, never
+collapsed to a single opaque score.
+
 ## Test
 
 ```bash
@@ -1223,9 +1251,10 @@ platform's architecture.**
   itself.
 - `ALPHA_VANTAGE_API_KEY` and `FINNHUB_API_KEY` were removed from
   `.env`/`.env.example`/`config.py`.
-- The rest of Phase 15 (news/sentiment, relationship graph, crypto
-  expansion) was not yet started as of this remediation — it resumes
-  from here.
+- The rest of Phase 15 resumed after this remediation: relationship
+  graph and news sentiment are complete (see below); crypto expansion
+  was investigated and found blocked by the same ToS pattern (see
+  below) — not built.
 
 **Relationship graph (interlocking directorates) — complete.** The first
 of the three original parts to resume after the remediation above, and
@@ -1259,3 +1288,51 @@ licensing risk to evaluate).
   interlocks are real but relatively rare in any small random sample;
   the underlying Form 4 PersonCompanyRole data itself was already
   live-validated in Phase 2).
+
+**Crypto expansion (Ethereum/ERC-20) — not built; blocked by the same
+ToS finding.** Applying the scrutiny from the Alpha Vantage/Finnhub
+remediation before asking for a key this time: Etherscan's dedicated API
+Terms of Service (`etherscan.io/apiterms`, distinct from its general
+website terms) explicitly state "you are permitted to view, print,
+download, cache and make copies of our API Content... strictly for
+personal use only but not for commercial use" — the identical pattern as
+the four already-removed sources. No key was requested, and no
+alternative Ethereum explorer was found with clearer terms in the time
+available (most are commercial businesses with the same underlying
+economics as Etherscan). This stays a real, open gap — Phase 12's
+Bitcoin-only on-chain tracking (via blockchain.info/blockchain.com,
+whose "Explorer" product terms do not repeat the same restriction as
+explicitly, though a fully unambiguous reading wasn't reached either) is
+what exists today.
+
+**News sentiment (GDELT) — complete.** The last of the three original
+parts, and a genuine positive finding: the GDELT Project's Terms of Use
+explicitly permit commercial use and redistribution (see "News
+sentiment" above for the exact language and full reasoning) — the
+opposite result from every commercial vendor checked this phase.
+
+- **Directional sentiment context, not a precise per-company signal** —
+  GDELT has no concept of "company," only full-text search; a query like
+  a company's name can match unrelated coverage. `query` is stored
+  verbatim for transparency, and `--query` is kept separate from
+  `--ticker` for exactly this reason.
+- **Append-only, not deduplicated** — each ingestion call is its own
+  observation over GDELT's continuously moving search window (e.g. "last
+  7 days"), unlike every other ingestion module in this system, which
+  dedupes against a natural per-fact key. Re-running the same ticker/
+  query/timespan creates a new snapshot rather than being treated as a
+  duplicate.
+- **No point-in-time gating** (no `as_of`) — `retrieved_at` is when this
+  system ran the search, not a filing/disclosure timestamp.
+- **A real, hard rate limit**: GDELT asks for no more than one request
+  every 5 seconds — confirmed live via an actual HTTP 429 with that exact
+  guidance when requests came faster — which is why this adapter (unlike
+  every other ingestion module here) only handles one ticker/query per
+  CLI invocation rather than a repeatable batch.
+- Validated against real, live GDELT data end to end: a real query for
+  "Apple Inc" over the trailing 7 days returned 330 real matching
+  articles with a real mean tone of +0.061 (a hand-verified count-weighted
+  average of the real 22-bin tone histogram); confirmed the resolved
+  Company entity matches the same AAPL entity used by this system's other
+  ticker-resolved data from earlier phases; served correctly through
+  `/api/v1/news-sentiment` over HTTP.

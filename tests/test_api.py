@@ -440,6 +440,28 @@ def test_interlocking_directorates_endpoint(session):
     assert none_filtered == []
 
 
+def test_news_sentiment_endpoint(session):
+    from capint.adapters.gdelt import GDELTAdapter
+    from capint.ingestion.gdelt import ingest_news_sentiment
+    from tests.fixtures.gdelt import KNOWN_QUERY, make_test_client as make_gdelt_test_client
+
+    adapter = GDELTAdapter(client=make_gdelt_test_client(), min_request_interval=0)
+    ingest_news_sentiment(session, adapter, "AAPL", KNOWN_QUERY)
+
+    client = next(make_client(session))
+
+    snapshots = client.get("/api/v1/news-sentiment").json()
+    assert len(snapshots) == 1
+    assert snapshots[0]["query"] == KNOWN_QUERY
+    assert snapshots[0]["article_count"] == 3172
+    assert snapshots[0]["mean_tone"] == "0.195"
+    assert len(snapshots[0]["tone_distribution"]) == 22
+
+    company_entity_id = snapshots[0]["company_entity_id"]
+    filtered = client.get("/api/v1/news-sentiment", params={"company_entity_id": company_entity_id}).json()
+    assert len(filtered) == 1
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

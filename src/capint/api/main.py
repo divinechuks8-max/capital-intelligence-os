@@ -27,6 +27,7 @@ from capint.api.schemas import (
     InstitutionalRadarEntryOut,
     InstitutionOut,
     InterlockingDirectorateOut,
+    NewsSentimentSnapshotOut,
     ShortInterestRadarEntryOut,
     ShortInterestSnapshotOut,
     UKPersonWithSignificantControlOut,
@@ -48,6 +49,7 @@ from capint.models.fund import Fund, FundAumSnapshot
 from capint.models.fundamentals import FundamentalReport
 from capint.models.guidance import GuidanceDisclosure
 from capint.models.institution import InstitutionalHolding, InstitutionalManager
+from capint.models.news_sentiment import NewsSentimentSnapshot
 from capint.models.ownership import BeneficialOwnershipDisclosure
 from capint.models.short_interest import ShortInterestSnapshot
 from capint.models.uk_psc import UKPersonWithSignificantControl
@@ -643,6 +645,23 @@ def list_interlocking_directorates(
         )
         for r in results
     ]
+
+
+@app.get("/api/v1/news-sentiment", response_model=list[NewsSentimentSnapshotOut])
+def list_news_sentiment_snapshots(
+    company_entity_id: UUID | None = None,
+    session: Session = Depends(get_session),
+) -> list[NewsSentimentSnapshotOut]:
+    """News-tone ("sentiment") snapshots (Phase 15), newest first. Not
+    point-in-time gated (no `as_of` parameter) — `retrieved_at` is when
+    this system ran the search, not a filing/disclosure timestamp. See
+    capint.models.news_sentiment's module docstring for why this is
+    directional sentiment context, not a precise per-company signal."""
+    stmt = select(NewsSentimentSnapshot).order_by(NewsSentimentSnapshot.retrieved_at.desc())
+    if company_entity_id is not None:
+        stmt = stmt.where(NewsSentimentSnapshot.company_entity_id == company_entity_id)
+    snapshots = session.execute(stmt).scalars().all()
+    return [NewsSentimentSnapshotOut.model_validate(s) for s in snapshots]
 
 
 @app.get("/api/v1/radar/insider", response_model=list[InsiderRadarEntryOut])

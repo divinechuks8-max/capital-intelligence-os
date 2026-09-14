@@ -14,6 +14,7 @@
     python -m capint.cli backtest-short-interest
     python -m capint.cli ingest-corporate-actions --cik 0000789019
     python -m capint.cli ingest-volatility-index --index-code VIX
+    python -m capint.cli ingest-news-sentiment --ticker AAPL --query "Apple Inc"
 """
 
 import argparse
@@ -26,6 +27,7 @@ from capint.adapters.blockchain_info import BlockchainInfoAdapter
 from capint.adapters.cboe_volatility import CBOEVolatilityIndexAdapter
 from capint.adapters.companies_house import CompaniesHouseAdapter
 from capint.adapters.finra_short_interest import FINRAShortInterestAdapter
+from capint.adapters.gdelt import GDELTAdapter
 from capint.adapters.sec_13dg import SEC13DGAdapter
 from capint.adapters.sec_13f import SEC13FAdapter
 from capint.adapters.sec_corporate_actions import SECCorporateActionAdapter
@@ -42,6 +44,7 @@ from capint.ingestion.blockchain_info import run_ingestion as run_crypto_treasur
 from capint.ingestion.cboe_volatility import run_ingestion as run_volatility_index_ingestion
 from capint.ingestion.companies_house import run_ingestion as run_uk_psc_ingestion
 from capint.ingestion.finra_short_interest import run_ingestion as run_short_interest_ingestion
+from capint.ingestion.gdelt import ingest_news_sentiment
 from capint.ingestion.sec_13dg import run_ingestion as run_13dg_ingestion
 from capint.ingestion.sec_13f import run_ingestion as run_13f_ingestion
 from capint.ingestion.sec_corporate_actions import run_ingestion as run_corporate_action_ingestion
@@ -440,6 +443,32 @@ def ingest_volatility_index(index_codes: list[str]) -> int:
     return 0
 
 
+def ingest_news_sentiment_cli(ticker: str | None, query: str | None, timespan: str) -> int:
+    """Ingests one GDELT news-tone snapshot for one company (Phase 15).
+    No API key needed. `--query` is the actual GDELT search string, kept
+    separate from `--ticker` (used only for entity resolution) since
+    searching by bare ticker symbol gives poor precision — see
+    capint.models.news_sentiment's module docstring."""
+    if not ticker or not query:
+        print("Both --ticker and --query are required (e.g. --ticker AAPL --query \"Apple Inc\").", file=sys.stderr)
+        return 1
+
+    adapter = GDELTAdapter()
+    with SessionLocal() as session:
+        result = ingest_news_sentiment(session, adapter, ticker, query, timespan=timespan)
+
+    if not result.created:
+        print(result.note)
+        return 0
+
+    snapshot = result.snapshot
+    print(f"query:            {snapshot.query!r}")
+    print(f"timespan:         {snapshot.timespan}")
+    print(f"article count:    {snapshot.article_count}")
+    print(f"mean tone:        {snapshot.mean_tone}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="capint")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -537,6 +566,13 @@ def main() -> int:
         "--index-code", action="append", default=[], help="Cboe index code, e.g. VIX (repeatable; defaults to VIX)"
     )
 
+    news_parser = subparsers.add_parser(
+        "ingest-news-sentiment", help="Ingest one GDELT news-tone snapshot for one company"
+    )
+    news_parser.add_argument("--ticker", help="Ticker symbol, for entity resolution only")
+    news_parser.add_argument("--query", help="GDELT search string, e.g. \"Apple Inc\"")
+    news_parser.add_argument("--timespan", default="7d", help="GDELT timespan, e.g. 7d, 24h, 1m (default: 7d)")
+
     args = parser.parse_args()
     if args.command == "ingest-form4":
         return ingest_form4(args.count)
@@ -566,6 +602,8 @@ def main() -> int:
         return ingest_corporate_actions(args.cik, args.filing_count)
     if args.command == "ingest-volatility-index":
         return ingest_volatility_index(args.index_code)
+    if args.command == "ingest-news-sentiment":
+        return ingest_news_sentiment_cli(args.ticker, args.query, args.timespan)
     return 1
 
 
