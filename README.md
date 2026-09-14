@@ -4,6 +4,24 @@
 ![python](https://img.shields.io/badge/python-3.12-blue)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+Topics (also set as real GitHub repo topics — see the sidebar on
+[github.com/divinechuks8-max/capital-intelligence-os](https://github.com/divinechuks8-max/capital-intelligence-os)):
+
+![python](https://img.shields.io/badge/python-3776AB?logo=python&logoColor=white)
+![fastapi](https://img.shields.io/badge/fastapi-009688?logo=fastapi&logoColor=white)
+![sqlalchemy](https://img.shields.io/badge/sqlalchemy-D71F00)
+![alembic](https://img.shields.io/badge/alembic-6BA81E)
+![postgresql](https://img.shields.io/badge/postgresql-4169E1?logo=postgresql&logoColor=white)
+![sec-edgar](https://img.shields.io/badge/sec--edgar-1a1a1a)
+![finra](https://img.shields.io/badge/finra-1a1a1a)
+![fintech](https://img.shields.io/badge/fintech-5b6376)
+![financial-data](https://img.shields.io/badge/financial--data-5b6376)
+![market-intelligence](https://img.shields.io/badge/market--intelligence-5b6376)
+![capital-markets](https://img.shields.io/badge/capital--markets-5b6376)
+![insider-trading](https://img.shields.io/badge/insider--trading-5b6376)
+![institutional-holdings](https://img.shields.io/badge/institutional--holdings-5b6376)
+![research-tool](https://img.shields.io/badge/research--tool-5b6376)
+
 Public-market intelligence and capital-flow research platform. Ingests real
 disclosure and market data from SEC EDGAR (Form 4, 13F, Schedule 13D/13G,
 XBRL financials, Form N-PORT), FINRA, UK Companies House, Cboe, the GDELT
