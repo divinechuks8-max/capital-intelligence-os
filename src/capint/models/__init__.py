@@ -1,4 +1,5 @@
 from capint.models.alert import Alert, AlertRule, AlertRuleType
+from capint.models.analyst import AnalystRecommendationTrend
 from capint.models.base import Base
 from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
@@ -28,6 +29,7 @@ __all__ = [
     "Alert",
     "AlertRule",
     "AlertRuleType",
+    "AnalystRecommendationTrend",
     "Base",
     "BeneficialOwnershipDisclosure",
     "CapitalAllocationFact",

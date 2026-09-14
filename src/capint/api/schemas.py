@@ -215,6 +215,24 @@ class VolatilityIndexLevelOut(BaseModel):
     close: Decimal
 
 
+class AnalystRecommendationTrendOut(BaseModel):
+    """Aggregate counts of covering analysts by rating bucket, not
+    individual named analysts or price targets — see
+    capint.models.analyst.AnalystRecommendationTrend's docstring for why."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    company_entity_id: UUID
+    ticker: str
+    period: date
+    strong_buy: int
+    buy: int
+    hold: int
+    sell: int
+    strong_sell: int
+
+
 class AlertRuleOut(BaseModel):
     """Rules are user configuration, created via the CLI — this schema
     exists only to read back what's configured, never to create one

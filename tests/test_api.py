@@ -376,6 +376,28 @@ def test_volatility_index_endpoint(session):
     assert none_filtered == []
 
 
+def test_analyst_recommendations_endpoint(session):
+    from capint.adapters.finnhub import FinnhubAdapter
+    from capint.ingestion.finnhub import run_ingestion as run_finnhub_ingestion
+    from tests.fixtures.finnhub import KNOWN_TICKER, make_test_client as make_finnhub_test_client
+
+    adapter = FinnhubAdapter(api_key="test-key-not-real", client=make_finnhub_test_client(), min_request_interval=0)
+    run_finnhub_ingestion(session, adapter, [KNOWN_TICKER])
+
+    client = next(make_client(session))
+
+    trends = client.get("/api/v1/analyst-recommendations").json()
+    assert len(trends) == 4
+    assert trends[0]["period"] == "2026-09-01"  # newest first
+    assert trends[0]["strong_buy"] == 12
+
+    filtered = client.get("/api/v1/analyst-recommendations", params={"ticker": "AAPL"}).json()
+    assert len(filtered) == 4
+
+    none_filtered = client.get("/api/v1/analyst-recommendations", params={"ticker": "MSFT"}).json()
+    assert none_filtered == []
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

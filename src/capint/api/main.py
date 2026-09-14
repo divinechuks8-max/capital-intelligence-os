@@ -9,6 +9,7 @@ from capint import temporal
 from capint.api.schemas import (
     AlertOut,
     AlertRuleOut,
+    AnalystRecommendationTrendOut,
     BacktestSummaryOut,
     BeneficialOwnershipDisclosureOut,
     CapitalAllocationFactOut,
@@ -34,6 +35,7 @@ from capint.convergence.engine import compute_convergence
 from capint.db import get_session
 from capint.backtesting.engine import DEFAULT_HOLDING_TRADING_DAYS, backtest_rising_short_interest_cycles
 from capint.models.alert import Alert, AlertRule
+from capint.models.analyst import AnalystRecommendationTrend
 from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
 from capint.models.corporate_action import CorporateActionDisclosure
@@ -593,6 +595,26 @@ def list_volatility_index_levels(
     )
     levels = session.execute(stmt).scalars().all()
     return [VolatilityIndexLevelOut.model_validate(level) for level in levels]
+
+
+@app.get("/api/v1/analyst-recommendations", response_model=list[AnalystRecommendationTrendOut])
+def list_analyst_recommendation_trends(
+    company_entity_id: UUID | None = None,
+    ticker: str | None = None,
+    session: Session = Depends(get_session),
+) -> list[AnalystRecommendationTrendOut]:
+    """Aggregate Finnhub analyst recommendation trends (Phase 14),
+    newest period first. Not point-in-time gated (no `as_of` parameter),
+    same reasoning as the volatility-index endpoint — see
+    capint.models.analyst's module docstring for why there's no genuine
+    disclosure timestamp to gate on."""
+    stmt = select(AnalystRecommendationTrend).order_by(AnalystRecommendationTrend.period.desc())
+    if company_entity_id is not None:
+        stmt = stmt.where(AnalystRecommendationTrend.company_entity_id == company_entity_id)
+    if ticker is not None:
+        stmt = stmt.where(AnalystRecommendationTrend.ticker == ticker.upper())
+    trends = session.execute(stmt).scalars().all()
+    return [AnalystRecommendationTrendOut.model_validate(t) for t in trends]
 
 
 @app.get("/api/v1/radar/insider", response_model=list[InsiderRadarEntryOut])

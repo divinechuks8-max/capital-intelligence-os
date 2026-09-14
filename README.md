@@ -406,6 +406,29 @@ the same way (`--index-code VVIX`, `--index-code SKEW`, ...). Not tied to
 any Company/Entity — see `src/capint/models/volatility.py`'s module
 docstring for why.
 
+## Ingest real analyst recommendation trends
+
+Requires a free `FINNHUB_API_KEY` — self-service signup at
+[finnhub.io/register](https://finnhub.io/register), instant:
+
+```bash
+python -m capint.cli ingest-analyst-recommendations --ticker AAPL
+```
+
+```
+GET /api/v1/analyst-recommendations?ticker=AAPL
+```
+
+Aggregate counts of covering analysts by rating bucket (strong buy/buy/
+hold/sell/strong sell) per month — confirmed live to be genuinely
+accessible on Finnhub's free tier, unlike every other analyst-estimate
+source checked during Phase 12's research (IBES/Refinitiv, Zacks, Visible
+Alpha all require a paid/licensed relationship). **Individual named
+analysts and price targets are a separate, paid Finnhub feature, not
+ingested here** — only the aggregate rating-bucket counts. Resolved by
+ticker, the same lookup Phase 13's price/short-interest data uses, so
+this data lands on the same Company entity.
+
 ## Test
 
 ```bash
@@ -1010,3 +1033,77 @@ probability, or investment advice.**
   (493.95-507.29)/507.29 = -2.63%, both over the following 5 real trading
   days, 2026-08-31 to 2026-09-08); served correctly through
   `/api/v1/backtest/short-interest` over HTTP.
+
+## Known limitations (Phase 14)
+
+Phase 14 covers three independent extensions the user asked for together
+("all"): M&A corporate actions, options/derivatives market signals, and
+analyst estimates/ratings. All three are complete.
+
+**M&A corporate-action disclosures (SEC 8-K Item 2.01):**
+
+- **Deliberately excludes Item 1.01** ("Entry into a Material Definitive
+  Agreement") — it covers ordinary commercial contracts far more often
+  than signed-but-not-yet-closed merger agreements; including it would
+  trade real specificity for recall.
+- **No deal-term extraction** — this stores which 8-K was filed and a
+  link to it, not consideration, counterparty identity, or deal value.
+- **Cannot distinguish an acquisition from a spinoff/divestiture.** SEC's
+  8-K item taxonomy has no item number specific to spinoffs (`EventType`
+  also declares `SPINOFF`, still unused) — they're typically also filed
+  under Item 2.01, or disclosed via a separate Form 10 registration this
+  system doesn't ingest. A human must read the filing to tell which.
+- **A real bug caught and fixed before it could fire**: this module's
+  `raw_data_reference` initially reused Phase 12's exact guidance-ingester
+  format, which would have collided on `Event.raw_data_reference`'s
+  unique constraint the first time a real 8-K carried both a guidance
+  item and Item 2.01 at once (a realistic scenario) — fixed with a
+  distinct prefix, guarded by a regression test.
+- Validated against Microsoft's real 2023-10-13 Item 2.01 filing (its
+  Activision Blizzard acquisition completion) end to end, live.
+
+**Options/derivatives market signals (Cboe volatility indices):**
+
+- **Not per-security unusual options activity or a real put/call
+  ratio — that data remains genuinely gated.** Confirmed live during
+  research: Cboe's own market-statistics pages now show sign-in/
+  subscription indicators, and granular options-level data is explicitly
+  sold via Cboe DataShop. VIX (and VVIX, SKEW, ...) are Cboe's own
+  published volatility indices, derived from S&P 500 option prices but
+  market-wide, not attributable to any single security's options flow.
+- **Not tied to any Company/Entity** — a volatility index is a market-
+  wide signal, and inventing an entity-graph concept for it (identifiers,
+  relationships it doesn't have) would add complexity with no real
+  benefit. A handful of genuine Cboe single-stock volatility indices
+  exist (VXAPL for Apple, VXAZN for Amazon) but aren't ingested here.
+- **No scoring/signal layer yet** (e.g. a percentile-based "volatility
+  spike" score, mirroring `capint.scoring.short_interest_acceleration`'s
+  shape) — ingestion only, per this project's ingest-now/score-later
+  precedent.
+- Validated end to end: ingested the complete real VIX history (9,271
+  real trading days, 1990-01-02 to 2026-09-11) live from the Cboe CDN;
+  idempotent re-ingestion confirmed.
+
+**Analyst estimates/ratings (Finnhub):**
+
+- **Aggregate rating-bucket counts only** (how many covering analysts
+  rated strong buy/buy/hold/sell/strong sell each month) — **individual
+  named analysts and price targets are a separate, paid Finnhub feature,
+  not ingested here.** This is a real, deliberate scope boundary, not a
+  partial attempt at more granular estimate data.
+- **No genuine disclosure timestamp** — Finnhub's `period` is a monthly
+  aggregation bucket re-queryable at any time, not a filing with a real
+  "as of" moment, so (like Phase 13/14's price and volatility-index data)
+  this isn't Event/Document-based and API reads aren't point-in-time
+  gated.
+- Every other free/legal analyst-estimate source checked across Phase 12
+  and this phase (IBES/Refinitiv, Zacks, Visible Alpha) requires a paid/
+  licensed relationship — Finnhub's free tier turned out to be the real
+  exception for this specific aggregate view.
+- Validated against real, live Finnhub data end to end: ingested AAPL's
+  and MSFT's real 4-month recommendation history (e.g. MSFT: 23 strong
+  buy / 41 buy / 5 hold / 0 sell / 0 strong sell for 2026-09); confirmed
+  the same ticker resolves to the same Company entity already used by
+  that ticker's short-interest/price data from earlier phases; idempotent
+  re-ingestion confirmed; served correctly through
+  `/api/v1/analyst-recommendations` over HTTP.
