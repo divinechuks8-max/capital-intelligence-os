@@ -13,6 +13,7 @@
     python -m capint.cli evaluate-alerts
     python -m capint.cli ingest-prices --ticker AAPL
     python -m capint.cli backtest-short-interest
+    python -m capint.cli ingest-corporate-actions --cik 0000789019
 """
 
 import argparse
@@ -27,6 +28,7 @@ from capint.adapters.companies_house import CompaniesHouseAdapter
 from capint.adapters.finra_short_interest import FINRAShortInterestAdapter
 from capint.adapters.sec_13dg import SEC13DGAdapter
 from capint.adapters.sec_13f import SEC13FAdapter
+from capint.adapters.sec_corporate_actions import SECCorporateActionAdapter
 from capint.adapters.sec_edgar import SECEdgarForm4Adapter
 from capint.adapters.sec_guidance import SECGuidanceDisclosureAdapter
 from capint.adapters.sec_nport import SECNPortAdapter
@@ -42,6 +44,7 @@ from capint.ingestion.companies_house import run_ingestion as run_uk_psc_ingesti
 from capint.ingestion.finra_short_interest import run_ingestion as run_short_interest_ingestion
 from capint.ingestion.sec_13dg import run_ingestion as run_13dg_ingestion
 from capint.ingestion.sec_13f import run_ingestion as run_13f_ingestion
+from capint.ingestion.sec_corporate_actions import run_ingestion as run_corporate_action_ingestion
 from capint.ingestion.sec_form4 import run_ingestion as run_form4_ingestion
 from capint.ingestion.sec_guidance import run_ingestion as run_guidance_ingestion
 from capint.ingestion.sec_nport import run_ingestion as run_nport_ingestion
@@ -426,6 +429,32 @@ def backtest_short_interest(holding_trading_days: int) -> int:
     return 0
 
 
+def ingest_corporate_actions(ciks: list[str], filing_count: int) -> int:
+    """Ingests M&A-relevant 8-K disclosures (Item 2.01: Completion of
+    Acquisition or Disposition of Assets) for explicitly-provided
+    companies (Phase 14). No deal-term extraction is attempted — see
+    capint.models.corporate_action's module docstring for why this is an
+    honest observation-only scope."""
+    if not _require_user_agent():
+        return 1
+    if not ciks:
+        print("No CIKs to process — pass --cik one or more times (e.g. --cik 0000789019 for Microsoft).", file=sys.stderr)
+        return 1
+
+    adapter = SECCorporateActionAdapter(user_agent=settings.sec_edgar_user_agent)
+    with SessionLocal() as session:
+        summary = run_corporate_action_ingestion(session, adapter, ciks, filing_count=filing_count)
+
+    print(f"companies seen:                  {summary.companies_seen}")
+    print(f"companies with no disclosures:   {summary.companies_with_no_disclosures}")
+    print(f"disclosures created:             {summary.disclosures_created}")
+    print(f"disclosures skipped (dup):       {summary.disclosures_skipped_duplicate}")
+    print(f"company errors:                  {len(summary.company_errors)}")
+    for err in summary.company_errors:
+        print(f"  - {err}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="capint")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -511,6 +540,14 @@ def main() -> int:
         "--holding-trading-days", type=int, default=DEFAULT_HOLDING_TRADING_DAYS, help="Forward holding period in trading days"
     )
 
+    corp_action_parser = subparsers.add_parser(
+        "ingest-corporate-actions", help="Ingest M&A-relevant 8-K disclosures (Item 2.01)"
+    )
+    corp_action_parser.add_argument("--cik", action="append", default=[], help="Company CIK (repeatable)")
+    corp_action_parser.add_argument(
+        "--filing-count", type=int, default=20, help="Max recent 8-K filings to scan per company"
+    )
+
     args = parser.parse_args()
     if args.command == "ingest-form4":
         return ingest_form4(args.count)
@@ -538,6 +575,8 @@ def main() -> int:
         return ingest_prices(args.ticker)
     if args.command == "backtest-short-interest":
         return backtest_short_interest(args.holding_trading_days)
+    if args.command == "ingest-corporate-actions":
+        return ingest_corporate_actions(args.cik, args.filing_count)
     return 1
 
 

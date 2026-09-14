@@ -2,6 +2,7 @@ from capint.models.alert import Alert, AlertRule, AlertRuleType
 from capint.models.base import Base
 from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
+from capint.models.corporate_action import CorporateActionDisclosure
 from capint.models.crypto import CryptoTreasuryMovement
 from capint.models.entity import Entity, EntityIdentifier, EntityType, IdentifierType
 from capint.models.event import Event, EventType
@@ -30,6 +31,7 @@ __all__ = [
     "BeneficialOwnershipDisclosure",
     "CapitalAllocationFact",
     "Company",
+    "CorporateActionDisclosure",
     "CryptoTreasuryMovement",
     "Document",
     "Entity",

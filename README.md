@@ -357,6 +357,27 @@ a trading signal or investment advice** — see "Known limitations (Phase
 13)" below for the free tier's ~100-trading-day price-history ceiling and
 full scope notes.
 
+## Ingest real M&A corporate-action disclosures
+
+Also requires `SEC_EDGAR_USER_AGENT`:
+
+```bash
+python -m capint.cli ingest-corporate-actions --cik 0000789019 --filing-count 20
+```
+
+Per-company (`--cik`, repeatable). Flags 8-K filings tagged with Item
+2.01 ("Completion of Acquisition or Disposition of Assets"), confirmed
+live via `data.sec.gov/submissions`'s own per-filing `items` field — same
+mechanism as Phase 12's guidance disclosures, no full-text search or
+document parsing needed. Item 1.01 ("Entry into a Material Definitive
+Agreement") is deliberately excluded — it covers ordinary commercial
+contracts far more often than signed-but-not-yet-closed merger
+agreements, and including it would trade real specificity for recall
+this increment doesn't need. **Deliberately does not parse the filing
+exhibit or extract deal terms, consideration, or counterparty identity**
+— an OBSERVATION that a completed acquisition/disposition was disclosed,
+not this system's INTERPRETATION of what it says.
+
 ## Test
 
 ```bash

@@ -14,6 +14,7 @@ from capint.api.schemas import (
     CapitalAllocationFactOut,
     CompanyOut,
     ConvergenceEntryOut,
+    CorporateActionDisclosureOut,
     CryptoTreasuryMovementOut,
     EventOut,
     FundAumSnapshotOut,
@@ -34,6 +35,7 @@ from capint.backtesting.engine import DEFAULT_HOLDING_TRADING_DAYS, backtest_ris
 from capint.models.alert import Alert, AlertRule
 from capint.models.capital_allocation import CapitalAllocationFact
 from capint.models.company import Company
+from capint.models.corporate_action import CorporateActionDisclosure
 from capint.models.crypto import CryptoTreasuryMovement
 from capint.models.entity import Entity
 from capint.models.event import Event, EventType
@@ -522,6 +524,42 @@ def list_guidance_disclosures(
     rows = session.execute(stmt).all()
     return [
         GuidanceDisclosureOut(
+            event_id=event.id,
+            company_entity_id=disclosure.company_entity_id,
+            item_codes=disclosure.item_codes,
+            filing_form_type=disclosure.filing_form_type,
+            filing_accession=disclosure.filing_accession,
+            primary_document_url=disclosure.primary_document_url,
+            publication_time=event.publication_time,
+        )
+        for disclosure, event in rows
+    ]
+
+
+@app.get("/api/v1/corporate-actions", response_model=list[CorporateActionDisclosureOut])
+def list_corporate_action_disclosures(
+    company_entity_id: UUID | None = None,
+    as_of: datetime | None = Query(default=None, description="Point-in-time cutoff. Defaults to now."),
+    session: Session = Depends(get_session),
+) -> list[CorporateActionDisclosureOut]:
+    """M&A-relevant 8-K disclosures (Phase 14, Item 2.01), point-in-time
+    by `as_of` against Event.publication_time. See
+    capint.models.corporate_action's module docstring for why
+    `item_codes` is a raw, unparsed observation, not extracted deal terms
+    or a distinction between acquisition/spinoff/divestiture."""
+    cutoff = as_of or datetime.now(tz=None).astimezone()
+    stmt = (
+        select(CorporateActionDisclosure, Event)
+        .join(Event, CorporateActionDisclosure.event_id == Event.id)
+        .where(Event.publication_time <= cutoff)
+    )
+    if company_entity_id is not None:
+        stmt = stmt.where(CorporateActionDisclosure.company_entity_id == company_entity_id)
+    stmt = stmt.order_by(Event.publication_time.desc())
+
+    rows = session.execute(stmt).all()
+    return [
+        CorporateActionDisclosureOut(
             event_id=event.id,
             company_entity_id=disclosure.company_entity_id,
             item_codes=disclosure.item_codes,

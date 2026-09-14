@@ -333,6 +333,30 @@ def test_backtest_short_interest_endpoint(session):
     assert data["results"][0]["forward_return_pct"] == 20
 
 
+def test_corporate_actions_endpoint(session):
+    from capint.adapters.sec_corporate_actions import SECCorporateActionAdapter
+    from capint.ingestion.sec_corporate_actions import run_ingestion as run_corp_action_ingestion
+    from tests.fixtures.sec_corporate_actions import KNOWN_CIK, make_test_client as make_corp_action_test_client
+
+    adapter = SECCorporateActionAdapter(
+        user_agent="Capital Intelligence OS tests test@example.com",
+        client=make_corp_action_test_client(),
+        min_request_interval=0,
+    )
+    run_corp_action_ingestion(session, adapter, [KNOWN_CIK], filing_count=20)
+
+    client = next(make_client(session))
+
+    disclosures = client.get("/api/v1/corporate-actions").json()
+    assert len(disclosures) == 1
+    assert disclosures[0]["item_codes"] == "2.01"
+    assert disclosures[0]["filing_accession"] == "0001193125-23-255762"
+
+    company_entity_id = disclosures[0]["company_entity_id"]
+    filtered = client.get("/api/v1/corporate-actions", params={"company_entity_id": company_entity_id}).json()
+    assert len(filtered) == 1
+
+
 def test_ownership_disclosures_endpoint(session):
     from datetime import date as _date
 

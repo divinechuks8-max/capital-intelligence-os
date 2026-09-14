@@ -183,6 +183,23 @@ class GuidanceDisclosureOut(BaseModel):
     publication_time: datetime
 
 
+class CorporateActionDisclosureOut(BaseModel):
+    """`item_codes` is SEC's own raw item-number string, passed through
+    verbatim — see capint.models.corporate_action.CorporateActionDisclosure's
+    docstring for why no deal terms are extracted or claimed here, and why
+    this can't distinguish an acquisition from a spinoff/divestiture."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: UUID
+    company_entity_id: UUID
+    item_codes: str
+    filing_form_type: str
+    filing_accession: str
+    primary_document_url: str | None
+    publication_time: datetime
+
+
 class AlertRuleOut(BaseModel):
     """Rules are user configuration, created via the CLI — this schema
     exists only to read back what's configured, never to create one
