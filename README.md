@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/divinechuks8-max/capital-intelligence-os/actions/workflows/tests.yml/badge.svg)](https://github.com/divinechuks8-max/capital-intelligence-os/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.12-blue)
-![license](https://img.shields.io/badge/license-unlicensed-lightgrey)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Public-market intelligence and capital-flow research platform. Ingests real
 disclosure and market data from SEC EDGAR (Form 4, 13F, Schedule 13D/13G,
